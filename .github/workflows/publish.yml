@@ -11,12 +11,12 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -89,4 +89,3 @@ jobs:
             git commit -m "Publish beta v${{ steps.version.outputs.value }} [skip ci]"
             git push origin HEAD:main
           }
-
