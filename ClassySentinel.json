@@ -1,0 +1,9 @@
+{
+  "Name": "Classy Sentinel",
+  "Author": "MTitan",
+  "Punchline": "Polished, role-based gearset switching bars.",
+  "Description": "Turns your existing FFXIV gear sets into movable, lockable role bars with native job icons, default gearsets, alternate-set menus, and automatic handling for new jobs.",
+  "RepoUrl": "https://github.com/MarshalTitan/ClassySentinel",
+  "Tags": ["gearsets", "jobs", "ui", "launcher"]
+}
+
