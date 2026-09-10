@@ -2,8 +2,8 @@
   {
     "Author": "MTitan",
     "Name": "Classy Sentinel",
-    "Punchline": "A polished, unified gearset launcher.",
-    "Description": "Turns existing FFXIV gear sets into one compact, movable job panel with native icons, per-job filtering, temporary R3 controller selection, saved defaults, alternate-set menus, dynamic role grouping, and safe handling for newly added jobs.",
+    "Punchline": "A polished, temporary gear-set launcher.",
+    "Description": "Opens a compact native-icon launcher with R3, supports multiple exact gear sets per job, equips the highlighted set with Cross, and disappears immediately after selection. Additional sets are opt-in and saved with safe compound identities.",
     "InternalName": "ClassySentinel",
     "AssemblyVersion": "0.4.0.0",
     "TestingAssemblyVersion": "0.4.0.0",
