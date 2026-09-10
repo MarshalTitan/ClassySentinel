@@ -20,7 +20,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
-    [PluginService] internal static IGamepadState GamepadState { get; private set; } = null!;
+    [PluginService] internal static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
 
     private readonly WindowSystem windowSystem = new("ClassySentinel");
     private readonly UnifiedPanelWindow mainPanel;
@@ -32,7 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Gearsets = new GearsetService(DataManager, PlayerState, ChatGui, Log, Configuration);
-        Controller = new ControllerNavigation(this, GamepadState);
+        Controller = new ControllerNavigation(this, GameInteropProvider);
         mainPanel = new UnifiedPanelWindow(this);
         settingsWindow = new SettingsWindow(this);
         windowSystem.AddWindow(mainPanel);

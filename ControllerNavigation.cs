@@ -1,4 +1,5 @@
 using Dalamud.Game.ClientState.GamePad;
+using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.System.Input;
 
@@ -16,7 +17,7 @@ public sealed class ControllerNavigation : IDisposable
         | GamepadButtonsFlags.Circle;
 
     private readonly Plugin plugin;
-    private readonly IGamepadState gamepadState;
+    private readonly Hook<PadDevice.Delegates.Poll> gamepadPollHook;
     private readonly RepeatGate leftGate = new();
     private readonly RepeatGate rightGate = new();
     private readonly RepeatGate upGate = new();
@@ -27,11 +28,18 @@ public sealed class ControllerNavigation : IDisposable
 
     private GearsetReference? selectedGearset;
     private GamepadButtonsFlags buttonsAwaitingRelease;
+    private GamepadButtonsFlags latestRawButtons;
+    private bool selectorAvailable;
+    private bool pollR3WasDown;
+    private bool captureFaulted;
 
-    public ControllerNavigation(Plugin plugin, IGamepadState gamepadState)
+    public unsafe ControllerNavigation(Plugin plugin, IGameInteropProvider gameInteropProvider)
     {
         this.plugin = plugin;
-        this.gamepadState = gamepadState;
+        gamepadPollHook = gameInteropProvider.HookFromAddress<PadDevice.Delegates.Poll>(
+            (nint)PadDevice.StaticVirtualTablePointer->Poll,
+            GamepadPollDetour);
+        gamepadPollHook.Enable();
     }
 
     public bool IsActive { get; private set; }
@@ -39,9 +47,10 @@ public sealed class ControllerNavigation : IDisposable
     // This is the one authoritative temporary controller selection.
     public GearsetReference? SelectedGearset => selectedGearset;
 
-    public void Update(IReadOnlyList<NavigationRow> rows, bool selectorAvailable)
+    public void Update(IReadOnlyList<NavigationRow> rows, bool isSelectorAvailable)
     {
-        SuppressConsumedButtonsUntilReleased();
+        selectorAvailable = !captureFaulted && isSelectorAvailable && rows.Count > 0;
+        UpdateButtonsAwaitingRelease();
 
         // Update every action edge on every frame. This prevents an input held
         // while opening or closing the selector from becoming a second action.
@@ -49,7 +58,7 @@ public sealed class ControllerNavigation : IDisposable
         var crossPressed = crossGate.Pressed(IsDown(GamepadButtons.South));
         var circlePressed = circleGate.Pressed(IsDown(GamepadButtons.East));
 
-        if (!selectorAvailable || rows.Count == 0)
+        if (!selectorAvailable)
         {
             Deactivate();
             return;
@@ -58,18 +67,10 @@ public sealed class ControllerNavigation : IDisposable
         if (!IsActive)
         {
             if (r3Pressed)
-            {
                 Activate(rows);
-                SuppressSelectorButtons();
-            }
 
             return;
         }
-
-        // Filter only the buttons owned by this temporary selector. We never
-        // enable Dalamud's global ImGui gamepad navigation, so the virtual mouse
-        // cursor remains untouched.
-        SuppressSelectorButtons();
 
         if (r3Pressed || circlePressed)
         {
@@ -118,15 +119,17 @@ public sealed class ControllerNavigation : IDisposable
             return;
 
         LatchHeldSelectorButtons();
-        if (buttonsAwaitingRelease != GamepadButtonsFlags.None)
-            SuppressButtons(buttonsAwaitingRelease);
         IsActive = false;
         selectedGearset = null;
         ResetMovementState();
         plugin.CloseManualPanel();
     }
 
-    public void Dispose() => Deactivate();
+    public void Dispose()
+    {
+        Deactivate();
+        gamepadPollHook.Dispose();
+    }
 
     private void EnsureValidSelection(IReadOnlyList<NavigationRow> rows)
     {
@@ -209,12 +212,11 @@ public sealed class ControllerNavigation : IDisposable
         }
     }
 
-    private void SuppressConsumedButtonsUntilReleased()
+    private void UpdateButtonsAwaitingRelease()
     {
         if (buttonsAwaitingRelease == GamepadButtonsFlags.None)
             return;
 
-        var suppressThisFrame = buttonsAwaitingRelease;
         var stillHeld = GamepadButtonsFlags.None;
         foreach (var (button, flag) in ButtonMappings())
         {
@@ -223,18 +225,43 @@ public sealed class ControllerNavigation : IDisposable
         }
 
         buttonsAwaitingRelease = stillHeld;
-        // Also filter the release frame before dropping the latch.
-        SuppressButtons(suppressThisFrame);
     }
 
-    private void SuppressSelectorButtons() => SuppressButtons(SelectorButtons);
-
-    private unsafe void SuppressButtons(GamepadButtonsFlags buttons)
+    private unsafe nint GamepadPollDetour(PadDevice* padDevice)
     {
-        if (gamepadState.GamepadInputAddress == 0)
-            return;
+        var original = gamepadPollHook.Original(padDevice);
 
-        var padDevice = (PadDevice*)gamepadState.GamepadInputAddress;
+        try
+        {
+            // Capture the current physical buttons immediately after polling,
+            // before FFXIV can act on them. The framework update consumes this
+            // private snapshot; ImGui navigation and the virtual cursor are not
+            // involved.
+            latestRawButtons = padDevice->GamepadInputData.Buttons;
+
+            var r3Down = IsFlagDown(GamepadButtonsFlags.R3);
+            var openingPress = selectorAvailable && r3Down && !pollR3WasDown;
+            pollR3WasDown = r3Down;
+
+            var buttonsToSuppress = buttonsAwaitingRelease;
+            if (IsActive || openingPress)
+                buttonsToSuppress |= SelectorButtons;
+
+            if (buttonsToSuppress != GamepadButtonsFlags.None)
+                SuppressButtons(padDevice, buttonsToSuppress);
+        }
+        catch (Exception exception)
+        {
+            if (!captureFaulted)
+                Plugin.Log.Error(exception, "Temporary Classy Sentinel controller capture failed; disabling R3 selection.");
+            captureFaulted = true;
+        }
+
+        return original;
+    }
+
+    private static unsafe void SuppressButtons(PadDevice* padDevice, GamepadButtonsFlags buttons)
+    {
         ref var input = ref padDevice->GamepadInputData;
         var keepMask = ~buttons;
 
@@ -270,7 +297,20 @@ public sealed class ControllerNavigation : IDisposable
         yield return (GamepadButtons.East, GamepadButtonsFlags.Circle);
     }
 
-    private bool IsDown(GamepadButtons button) => gamepadState.Raw(button) > 0.5f;
+    private bool IsDown(GamepadButtons button)
+        => button switch
+        {
+            GamepadButtons.R3 => IsFlagDown(GamepadButtonsFlags.R3),
+            GamepadButtons.DpadUp => IsFlagDown(GamepadButtonsFlags.DPadUp),
+            GamepadButtons.DpadDown => IsFlagDown(GamepadButtonsFlags.DPadDown),
+            GamepadButtons.DpadLeft => IsFlagDown(GamepadButtonsFlags.DPadLeft),
+            GamepadButtons.DpadRight => IsFlagDown(GamepadButtonsFlags.DPadRight),
+            GamepadButtons.South => IsFlagDown(GamepadButtonsFlags.Cross),
+            GamepadButtons.East => IsFlagDown(GamepadButtonsFlags.Circle),
+            _ => false,
+        };
+
+    private bool IsFlagDown(GamepadButtonsFlags button) => (latestRawButtons & button) != 0;
 
     private void ResetMovementState()
     {

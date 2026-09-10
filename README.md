@@ -30,6 +30,10 @@ FFXIV gear sets into a polished, temporary job-switching launcher.
   shows the full FFXIV gear-set name, number, and item level.
 - R3 selection supports D-pad navigation, a separate cyan selection indicator,
   one exact equip request, and immediate exit.
+- While R3 selection is active, Classy Sentinel captures only D-pad directions,
+  Cross, R3, and Circle at FFXIV's gamepad poll boundary. Those presses do not
+  reach targeting, hotbars, menus, or the virtual mouse; all unrelated buttons
+  remain untouched and normal input resumes as soon as the selector closes.
 - Controller selection draws the highlighted FFXIV gear-set name directly beside
   its tile without moving the mouse cursor or simulating mouse hover.
 - Subtle data-driven role hues distinguish tanks (blue), healers (green), melee
@@ -56,7 +60,8 @@ FFXIV gear sets into a polished, temporary job-switching launcher.
 ## Controller controls
 
 Press R3 during normal gameplay to show the launcher and begin selection. It
-does not use Dalamud's global ImGui gamepad-navigation mode.
+does not use Dalamud's global ImGui gamepad-navigation mode or move the virtual
+mouse cursor. The controls below are captured only while the selector is active.
 
 - R3: open or cancel selection
 - D-pad: move through the visible grid
