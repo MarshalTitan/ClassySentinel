@@ -20,9 +20,10 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+    [PluginService] internal static IGamepadState GamepadState { get; private set; } = null!;
 
     private readonly WindowSystem windowSystem = new("ClassySentinel");
-    private readonly List<RoleBarWindow> roleBars = new();
+    private readonly UnifiedPanelWindow mainPanel;
     private readonly SettingsWindow settingsWindow;
     private bool configurationDirty;
     private DateTime saveConfigurationAfterUtc;
@@ -31,20 +32,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Gearsets = new GearsetService(DataManager, PlayerState, ChatGui, Log, Configuration);
+        Controller = new ControllerNavigation(this, GamepadState);
+        mainPanel = new UnifiedPanelWindow(this);
         settingsWindow = new SettingsWindow(this);
-
-        foreach (var category in Enum.GetValues<JobCategory>())
-        {
-            var bar = new RoleBarWindow(this, category);
-            roleBars.Add(bar);
-            windowSystem.AddWindow(bar);
-        }
-
+        windowSystem.AddWindow(mainPanel);
         windowSystem.AddWindow(settingsWindow);
 
         var command = new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle Classy Sentinel. Options: show, hide, lock, unlock, config, refresh",
+            HelpMessage = "Toggle Classy Sentinel. Options: show, hide, focus, unfocus, lock, unlock, config, refresh",
         };
         CommandManager.AddHandler(CommandName, command);
         CommandManager.AddHandler(ShortCommandName, command);
@@ -61,8 +57,11 @@ public sealed class Plugin : IDalamudPlugin
 
     public GearsetService Gearsets { get; }
 
+    public ControllerNavigation Controller { get; }
+
     public void Dispose()
     {
+        Controller.Dispose();
         Framework.Update -= OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleBars;
@@ -81,30 +80,49 @@ public sealed class Plugin : IDalamudPlugin
         SaveConfiguration();
     }
 
-    public void RememberBarPosition(JobCategory category, Vector2 position)
+    public void RememberPanelPosition(Vector2 position)
     {
         if (Configuration.Locked)
             return;
 
-        var key = category.ToString();
-        if (Configuration.BarPositions.TryGetValue(key, out var current)
+        var current = Configuration.PanelPosition;
+        if (current is not null
             && Math.Abs(current.X - position.X) < 0.5f
             && Math.Abs(current.Y - position.Y) < 0.5f)
         {
             return;
         }
 
-        Configuration.BarPositions[key] = new BarPosition { X = position.X, Y = position.Y };
+        Configuration.PanelPosition = new BarPosition { X = position.X, Y = position.Y };
         MarkConfigurationDirty();
     }
 
-    public void ResetBarPositions()
+    public void ResetPanelPosition()
     {
-        Configuration.BarPositions.Clear();
-        foreach (var roleBar in roleBars)
-            roleBar.ResetPosition();
+        Configuration.PanelPosition = null;
+        mainPanel.ResetPosition();
         SaveConfiguration();
     }
+
+    public void SetJobVisibility(uint classJobId, bool visible)
+    {
+        if (visible)
+            Configuration.HiddenClassJobIds.Remove(classJobId);
+        else
+            Configuration.HiddenClassJobIds.Add(classJobId);
+        SaveConfiguration();
+    }
+
+    public void ActivateControllerFocus()
+    {
+        Configuration.Visible = true;
+        mainPanel.IsOpen = true;
+        mainPanel.BringToFront();
+        Controller.Activate(mainPanel.BuildNavigationRows());
+        SaveConfiguration();
+    }
+
+    public void DeactivateControllerFocus() => Controller.Deactivate();
 
     public void SaveConfiguration()
     {
@@ -121,6 +139,8 @@ public sealed class Plugin : IDalamudPlugin
     private void OnFrameworkUpdate(IFramework _)
     {
         Gearsets.RefreshIfDue();
+        var rows = mainPanel.BuildNavigationRows();
+        Controller.Update(rows, Configuration.Visible && PlayerState.IsLoaded && rows.Count > 0);
         if (configurationDirty && DateTime.UtcNow >= saveConfigurationAfterUtc)
             SaveConfiguration();
     }
@@ -128,6 +148,8 @@ public sealed class Plugin : IDalamudPlugin
     private void ToggleBars()
     {
         Configuration.Visible = !Configuration.Visible;
+        if (!Configuration.Visible)
+            Controller.Deactivate();
         SaveConfiguration();
     }
 
@@ -143,7 +165,15 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "hide":
                 Configuration.Visible = false;
+                Controller.Deactivate();
                 SaveConfiguration();
+                break;
+            case "focus":
+            case "controller":
+                ActivateControllerFocus();
+                break;
+            case "unfocus":
+                DeactivateControllerFocus();
                 break;
             case "lock":
                 Configuration.Locked = true;
@@ -166,4 +196,3 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 }
-

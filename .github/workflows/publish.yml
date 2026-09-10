@@ -58,7 +58,7 @@ jobs:
             gh release upload $tag $asset --clobber --repo '${{ github.repository }}'
           }
           else {
-            gh release create $tag $asset --repo '${{ github.repository }}' --target '${{ github.sha }}' --title "Classy Sentinel ${{ steps.version.outputs.value }} beta" --notes "Initial Classy Sentinel beta. Human in-game validation is required before wider distribution." --prerelease
+            gh release create $tag $asset --repo '${{ github.repository }}' --target '${{ github.sha }}' --title "Classy Sentinel ${{ steps.version.outputs.value }} beta" --notes "Beta release built and packaged by GitHub Actions. Human in-game validation is required before wider distribution." --prerelease
           }
 
       - name: Update this repository's manifest
