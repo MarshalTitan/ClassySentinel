@@ -1,4 +1,3 @@
 namespace ClassySentinel;
 
-public sealed record NavigationRow(JobCategory Category, IReadOnlyList<uint> ClassJobIds);
-
+public sealed record NavigationRow(JobCategory Category, IReadOnlyList<GearsetReference> Gearsets);

@@ -20,12 +20,11 @@ public sealed class SettingsWindow : Window
     {
         var changed = false;
 
-        var visible = plugin.Configuration.Visible;
-        if (ImGui.Checkbox("Show unified job panel", ref visible))
-        {
-            plugin.Configuration.Visible = visible;
-            changed = true;
-        }
+        var panelVisible = plugin.ManualPanelOpen || plugin.Controller.IsActive;
+        if (ImGui.Button(panelVisible ? "Close launcher" : "Open launcher"))
+            plugin.SetManualPanelOpen(!panelVisible);
+        ImGui.SameLine();
+        ImGui.TextDisabled("The launcher is hidden by default during gameplay.");
 
         var locked = plugin.Configuration.Locked;
         if (ImGui.Checkbox("Lock panel position", ref locked))
@@ -41,7 +40,7 @@ public sealed class SettingsWindow : Window
             changed = true;
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("This disables mouse interaction while locked. The temporary R3 selector still works.");
+            ImGui.SetTooltip("This disables mouse interaction while locked. The temporary R3 launcher still works.");
 
         var headers = plugin.Configuration.ShowCategoryHeaders;
         if (ImGui.Checkbox("Show category headers", ref headers))
@@ -75,8 +74,8 @@ public sealed class SettingsWindow : Window
         ImGui.Separator();
         ImGui.Text("Controller");
         ImGui.TextDisabled("R3 - Open / cancel Classy Sentinel");
-        ImGui.TextDisabled("D-pad - Navigate visible jobs");
-        ImGui.TextDisabled("X / Cross - Equip selected job and exit");
+        ImGui.TextDisabled("D-pad - Navigate visible gear sets");
+        ImGui.TextDisabled("X / Cross - Equip the exact selected gear set and exit");
         ImGui.TextDisabled("Circle - Cancel");
 
         ImGui.Spacing();
@@ -95,7 +94,8 @@ public sealed class SettingsWindow : Window
 
         ImGui.Spacing();
         ImGui.Separator();
-        ImGui.Text("Visible jobs");
+        ImGui.Text("Visible gear sets");
+        ImGui.TextDisabled("Each job's default is shown automatically. Additional sets are opt-in.");
 
         foreach (var category in Enum.GetValues<JobCategory>())
         {
@@ -106,18 +106,47 @@ public sealed class SettingsWindow : Window
             ImGui.TextDisabled(category.DisplayName());
             foreach (var job in jobs)
             {
-                var first = job.First();
-                var jobVisible = plugin.Configuration.IsJobVisible(job.Key);
-                if (ImGui.Checkbox($"{first.JobAbbreviation} - {first.JobName}##job-visibility-{job.Key}", ref jobVisible))
-                    plugin.SetJobVisibility(job.Key, jobVisible);
+                var defaultGearset = plugin.Gearsets.GetDefault(job.Key);
+                foreach (var gearset in job.OrderBy(entry => entry.GearsetId))
+                {
+                    var isDefault = defaultGearset is not null && defaultGearset.GearsetId == gearset.GearsetId;
+                    var gearsetVisible = isDefault
+                        ? plugin.Configuration.IsDefaultGearsetVisible(gearset)
+                        : plugin.Configuration.IsAdditionalGearsetVisible(gearset);
+                    var marker = isDefault ? "Default" : "Extra";
+                    var label = $"{gearset.JobAbbreviation} - {gearset.GearsetName} [#{gearset.GearsetId + 1}] ({marker})##gearset-visibility-{gearset.ClassJobId}-{gearset.GearsetId}";
+                    if (ImGui.Checkbox(label, ref gearsetVisible))
+                    {
+                        if (isDefault)
+                            plugin.SetDefaultGearsetVisibility(gearset, gearsetVisible);
+                        else
+                            plugin.SetAdditionalGearsetVisibility(gearset, gearsetVisible);
+                    }
+
+                    if (!isDefault)
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"Make default##default-{gearset.ClassJobId}-{gearset.GearsetId}"))
+                            plugin.SetDefaultGearset(gearset);
+                    }
+                }
             }
         }
 
-        if (ImGui.Button("Show all jobs"))
+        if (ImGui.Button("Show all default gear sets"))
         {
-            plugin.Configuration.HiddenClassJobIds.Clear();
+            plugin.Configuration.HiddenDefaultGearsets.Clear();
             changed = true;
         }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Hide all extras"))
+        {
+            plugin.Configuration.AdditionalGearsets.Clear();
+            changed = true;
+        }
+
+        DrawUnavailableGearsets(ref changed);
 
         ImGui.Spacing();
         if (ImGui.Button("Refresh gear sets"))
@@ -131,10 +160,51 @@ public sealed class SettingsWindow : Window
         }
 
         ImGui.Spacing();
-        ImGui.TextDisabled("Left-click a job to equip its default gear set.");
-        ImGui.TextDisabled("Right-click a job to choose or set another default.");
+        ImGui.TextDisabled("Every launcher tile equips the exact gear set named in its tooltip.");
+        ImGui.TextDisabled("Duplicate job icons receive a gear-set number badge.");
 
         if (changed)
             plugin.SaveConfiguration();
+    }
+
+    private void DrawUnavailableGearsets(ref bool changed)
+    {
+        var unavailableDefaults = plugin.Configuration.DefaultGearsetEntries
+            .Where(saved => plugin.Gearsets.FindExact(saved.Value) is null)
+            .ToArray();
+        var unavailableExtras = plugin.Configuration.AdditionalGearsets
+            .Where(saved => plugin.Gearsets.FindExact(saved) is null)
+            .ToArray();
+
+        if (unavailableDefaults.Length == 0 && unavailableExtras.Length == 0)
+            return;
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Text("Unavailable saved gear sets");
+        ImGui.TextDisabled("These entries will never redirect to another gear-set slot.");
+
+        foreach (var (classJobId, saved) in unavailableDefaults)
+        {
+            ImGui.TextDisabled($"Default: {saved.GearsetName} [#{saved.GearsetId + 1}] (ClassJob {classJobId})");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Remove##missing-default-{classJobId}-{saved.GearsetId}"))
+            {
+                plugin.Configuration.DefaultGearsetEntries.Remove(classJobId);
+                plugin.Configuration.HiddenDefaultGearsets.RemoveAll(entry => entry.Equals(saved));
+                changed = true;
+            }
+        }
+
+        foreach (var saved in unavailableExtras.ToArray())
+        {
+            ImGui.TextDisabled($"Extra: {saved.GearsetName} [#{saved.GearsetId + 1}] (ClassJob {saved.ClassJobId})");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Remove##missing-extra-{saved.ImGuiId}"))
+            {
+                plugin.Configuration.AdditionalGearsets.RemoveAll(entry => entry.Equals(saved));
+                changed = true;
+            }
+        }
     }
 }

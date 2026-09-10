@@ -51,6 +51,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
 
         Gearsets.ForceRefresh();
+        MaintainGearsetReferences();
     }
 
     public Configuration Configuration { get; }
@@ -58,6 +59,8 @@ public sealed class Plugin : IDalamudPlugin
     public GearsetService Gearsets { get; }
 
     public ControllerNavigation Controller { get; }
+
+    public bool ManualPanelOpen { get; private set; }
 
     public void Dispose()
     {
@@ -74,11 +77,42 @@ public sealed class Plugin : IDalamudPlugin
             PluginInterface.SavePluginConfig(Configuration);
     }
 
-    public void SetDefaultGearset(uint classJobId, int gearsetId)
+    public void SetDefaultGearset(GearsetInfo gearset)
     {
-        Configuration.DefaultGearsets[classJobId] = gearsetId;
+        var previousDefault = Gearsets.GetDefault(gearset.ClassJobId);
+        var preservePrevious = previousDefault is not null
+                               && previousDefault.GearsetId != gearset.GearsetId
+                               && Configuration.IsDefaultGearsetVisible(previousDefault);
+
+        Configuration.DefaultGearsetEntries[gearset.ClassJobId] = GearsetReference.From(gearset);
+        Configuration.DefaultGearsets.Remove(gearset.ClassJobId);
+        Configuration.AdditionalGearsets.RemoveAll(saved => saved.Matches(gearset));
+        if (preservePrevious
+            && previousDefault is not null
+            && !Configuration.AdditionalGearsets.Any(saved => saved.Matches(previousDefault)))
+        {
+            Configuration.AdditionalGearsets.Add(GearsetReference.From(previousDefault));
+        }
+        Configuration.HiddenDefaultGearsets.RemoveAll(saved => saved.ClassJobId == gearset.ClassJobId);
         SaveConfiguration();
     }
+
+    public void SetAdditionalGearsetVisibility(GearsetInfo gearset, bool visible)
+    {
+        Configuration.AdditionalGearsets.RemoveAll(saved => saved.Matches(gearset));
+        if (visible)
+            Configuration.AdditionalGearsets.Add(GearsetReference.From(gearset));
+        SaveConfiguration();
+    }
+
+    public void SetManualPanelOpen(bool open)
+    {
+        ManualPanelOpen = open;
+        if (!open && Controller.IsActive)
+            Controller.Deactivate();
+    }
+
+    public void CloseManualPanel() => ManualPanelOpen = false;
 
     public void RememberPanelPosition(Vector2 position)
     {
@@ -104,12 +138,11 @@ public sealed class Plugin : IDalamudPlugin
         SaveConfiguration();
     }
 
-    public void SetJobVisibility(uint classJobId, bool visible)
+    public void SetDefaultGearsetVisibility(GearsetInfo gearset, bool visible)
     {
-        if (visible)
-            Configuration.HiddenClassJobIds.Remove(classJobId);
-        else
-            Configuration.HiddenClassJobIds.Add(classJobId);
+        Configuration.HiddenDefaultGearsets.RemoveAll(saved => saved.Matches(gearset));
+        if (!visible)
+            Configuration.HiddenDefaultGearsets.Add(GearsetReference.From(gearset));
         SaveConfiguration();
     }
 
@@ -128,18 +161,30 @@ public sealed class Plugin : IDalamudPlugin
     private void OnFrameworkUpdate(IFramework _)
     {
         Gearsets.RefreshIfDue();
+        MaintainGearsetReferences();
         var rows = mainPanel.BuildNavigationRows();
-        Controller.Update(rows, Configuration.Visible && PlayerState.IsLoaded && rows.Count > 0);
+        Controller.Update(rows, PlayerState.IsLoaded && rows.Count > 0);
         if (configurationDirty && DateTime.UtcNow >= saveConfigurationAfterUtc)
+            SaveConfiguration();
+    }
+
+    private void MaintainGearsetReferences()
+    {
+        var changed = Configuration.TryMigrateGearsetReferences(Gearsets.Gearsets);
+        changed |= Configuration.EnsureAutomaticDefaults(Gearsets.Gearsets);
+        if (changed)
             SaveConfiguration();
     }
 
     private void ToggleBars()
     {
-        Configuration.Visible = !Configuration.Visible;
-        if (!Configuration.Visible)
+        if (Controller.IsActive)
+        {
             Controller.Deactivate();
-        SaveConfiguration();
+            return;
+        }
+
+        ManualPanelOpen = !ManualPanelOpen;
     }
 
     private void OpenSettings() => settingsWindow.IsOpen = true;
@@ -149,13 +194,11 @@ public sealed class Plugin : IDalamudPlugin
         switch (arguments.Trim().ToLowerInvariant())
         {
             case "show":
-                Configuration.Visible = true;
-                SaveConfiguration();
+                SetManualPanelOpen(true);
                 break;
             case "hide":
-                Configuration.Visible = false;
+                ManualPanelOpen = false;
                 Controller.Deactivate();
-                SaveConfiguration();
                 break;
             case "lock":
                 Configuration.Locked = true;

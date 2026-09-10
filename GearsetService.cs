@@ -49,23 +49,56 @@ public sealed class GearsetService
         if (matching.Length == 0)
             return null;
 
-        if (configuration.DefaultGearsets.TryGetValue(classJobId, out var configuredId))
+        if (configuration.DefaultGearsetEntries.TryGetValue(classJobId, out var configured))
         {
-            var configured = matching.FirstOrDefault(x => x.GearsetId == configuredId);
-            if (configured is not null)
-                return configured;
+            // Never fall through to a different entry when a saved default no
+            // longer matches. The stale reference remains visible in settings.
+            return matching.FirstOrDefault(configured.Matches);
         }
 
         return matching.OrderBy(x => x.GearsetId).First();
     }
 
-    public bool EquipDefault(uint classJobId)
+    public IReadOnlyList<GearsetInfo> VisibleGearsetsIn(JobCategory category)
     {
-        var gearset = GetDefault(classJobId);
-        if (gearset is null)
-            return false;
+        var visible = new List<GearsetInfo>();
+        foreach (var job in JobsIn(category))
+        {
+            var defaultGearset = GetDefault(job.Key);
+            if (defaultGearset is not null && configuration.IsDefaultGearsetVisible(defaultGearset))
+                visible.Add(defaultGearset);
 
-        return Equip(gearset);
+            visible.AddRange(job
+                .Where(gearset => (defaultGearset is null || gearset.GearsetId != defaultGearset.GearsetId)
+                                  && configuration.IsAdditionalGearsetVisible(gearset))
+                .OrderBy(gearset => gearset.GearsetId));
+        }
+
+        return visible;
+    }
+
+    public GearsetInfo? FindExact(GearsetReference reference)
+        => gearsets.FirstOrDefault(reference.Matches);
+
+    public unsafe GearsetInfo? GetCurrentGearset()
+    {
+        var module = RaptureGearsetModule.Instance();
+        if (!playerState.IsLoaded || module is null || module->CurrentGearsetIndex < 0)
+            return null;
+
+        var currentIndex = module->CurrentGearsetIndex;
+        return gearsets.FirstOrDefault(gearset => gearset.GearsetId == currentIndex);
+    }
+
+    public bool Equip(GearsetReference reference)
+    {
+        var gearset = FindExact(reference);
+        if (gearset is not null)
+            return Equip(gearset);
+
+        chatGui.PrintError($"Classy Sentinel will not equip '{reference.GearsetName}' because that saved gear set is no longer available.");
+        ForceRefresh();
+        return false;
     }
 
     public unsafe bool Equip(GearsetInfo gearset)
@@ -74,6 +107,22 @@ public sealed class GearsetService
         if (!playerState.IsLoaded || module is null || !module->IsValidGearset(gearset.GearsetId))
         {
             chatGui.PrintError($"Classy Sentinel could not find gear set #{gearset.GearsetId + 1}.");
+            ForceRefresh();
+            return false;
+        }
+        var entries = module->Entries;
+        if (gearset.GearsetId < 0 || gearset.GearsetId >= entries.Length)
+        {
+            chatGui.PrintError($"Classy Sentinel could not safely identify '{gearset.GearsetName}'.");
+            ForceRefresh();
+            return false;
+        }
+
+        ref var liveEntry = ref entries[gearset.GearsetId];
+        if ((uint)liveEntry.ClassJob != gearset.ClassJobId
+            || !string.Equals(liveEntry.NameString, gearset.GearsetName, StringComparison.Ordinal))
+        {
+            chatGui.PrintError($"Classy Sentinel will not equip '{gearset.GearsetName}' because that gear-set slot changed. Refresh and choose it again in settings.");
             ForceRefresh();
             return false;
         }

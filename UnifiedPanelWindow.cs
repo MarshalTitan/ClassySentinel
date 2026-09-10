@@ -37,7 +37,7 @@ public sealed class UnifiedPanelWindow : Window
     }
 
     public override bool DrawConditions()
-        => plugin.Configuration.Visible
+        => (plugin.ManualPanelOpen || plugin.Controller.IsActive)
            && Plugin.PlayerState.IsLoaded
            && BuildNavigationRows().Count > 0;
 
@@ -74,8 +74,8 @@ public sealed class UnifiedPanelWindow : Window
         var firstCategory = true;
         foreach (var category in Enum.GetValues<JobCategory>())
         {
-            var jobs = GetVisibleJobs(category);
-            if (jobs.Length == 0)
+            var gearsets = GetVisibleGearsets(category);
+            if (gearsets.Count == 0)
                 continue;
 
             if (!firstCategory)
@@ -91,12 +91,14 @@ public sealed class UnifiedPanelWindow : Window
                 ImGui.Spacing();
             }
 
-            for (var index = 0; index < jobs.Length; index++)
+            for (var index = 0; index < gearsets.Count; index++)
             {
-                DrawJobButton(jobs[index]);
+                var gearset = gearsets[index];
+                var duplicateCount = gearsets.Count(other => other.ClassJobId == gearset.ClassJobId);
+                DrawGearsetButton(gearset, duplicateCount > 1);
 
                 var shouldWrap = (index + 1) % Math.Max(1, plugin.Configuration.ButtonsPerRow) == 0;
-                if (!shouldWrap && index < jobs.Length - 1)
+                if (!shouldWrap && index < gearsets.Count - 1)
                     ImGui.SameLine();
             }
 
@@ -128,12 +130,12 @@ public sealed class UnifiedPanelWindow : Window
 
         foreach (var category in Enum.GetValues<JobCategory>())
         {
-            var jobs = GetVisibleJobs(category);
-            for (var index = 0; index < jobs.Length; index += rowSize)
+            var gearsets = GetVisibleGearsets(category);
+            for (var index = 0; index < gearsets.Count; index += rowSize)
             {
                 rows.Add(new NavigationRow(
                     category,
-                    jobs.Skip(index).Take(rowSize).Select(job => job.Key).ToArray()));
+                    gearsets.Skip(index).Take(rowSize).Select(GearsetReference.From).ToArray()));
             }
         }
 
@@ -146,14 +148,12 @@ public sealed class UnifiedPanelWindow : Window
         forcePositionOnce = true;
     }
 
-    private IGrouping<uint, GearsetInfo>[] GetVisibleJobs(JobCategory category)
+    private IReadOnlyList<GearsetInfo> GetVisibleGearsets(JobCategory category)
     {
         if (!plugin.Configuration.IsCategoryVisible(category))
-            return Array.Empty<IGrouping<uint, GearsetInfo>>();
+            return Array.Empty<GearsetInfo>();
 
-        return plugin.Gearsets.JobsIn(category)
-            .Where(job => plugin.Configuration.IsJobVisible(job.Key))
-            .ToArray();
+        return plugin.Gearsets.VisibleGearsetsIn(category);
     }
 
     private void DrawPanelHeader()
@@ -169,17 +169,20 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.Spacing();
     }
 
-    private void DrawJobButton(IGrouping<uint, GearsetInfo> jobGearsets)
+    private void DrawGearsetButton(GearsetInfo gearset, bool hasDuplicateJob)
     {
-        var gearsets = jobGearsets.OrderBy(x => x.GearsetId).ToArray();
-        var defaultGearset = plugin.Gearsets.GetDefault(jobGearsets.Key) ?? gearsets[0];
-        var isCurrent = Plugin.PlayerState.ClassJob.IsValid
-                        && Plugin.PlayerState.ClassJob.RowId == jobGearsets.Key;
+        var defaultGearset = plugin.Gearsets.GetDefault(gearset.ClassJobId);
+        var isDefault = defaultGearset is not null && defaultGearset.GearsetId == gearset.GearsetId;
+        var currentGearset = plugin.Gearsets.GetCurrentGearset();
+        var isCurrent = currentGearset is not null
+            ? currentGearset.GearsetId == gearset.GearsetId && currentGearset.ClassJobId == gearset.ClassJobId
+            : isDefault && Plugin.PlayerState.ClassJob.IsValid && Plugin.PlayerState.ClassJob.RowId == gearset.ClassJobId;
+        var reference = GearsetReference.From(gearset);
         var isControllerFocused = plugin.Controller.IsActive
-                                  && plugin.Controller.SelectedClassJobId == jobGearsets.Key;
+                                  && reference.Equals(plugin.Controller.SelectedGearset);
         var size = new Vector2(plugin.Configuration.ButtonSize) * GetScale();
 
-        ImGui.PushID($"job-{jobGearsets.Key}");
+        ImGui.PushID($"gearset-{reference.ImGuiId}");
         ImGui.PushStyleColor(ImGuiCol.Button, isControllerFocused && !isCurrent ? ControllerIdle : isCurrent ? CurrentIdle : ButtonIdle);
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, isCurrent ? CurrentHover : ButtonHover);
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, ButtonActive);
@@ -188,63 +191,78 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 5f * GetScale());
 
         bool clicked;
-        if (defaultGearset.IconId != 0)
+        if (gearset.IconId != 0)
         {
             var texture = Plugin.TextureProvider
-                .GetFromGameIcon(new GameIconLookup(defaultGearset.IconId))
+                .GetFromGameIcon(new GameIconLookup(gearset.IconId))
                 .GetWrapOrDefault();
             clicked = texture is not null
                 ? ImGui.ImageButton(texture.Handle, size, Vector2.Zero, Vector2.One, Vector4.Zero, Vector4.One)
-                : ImGui.Button(defaultGearset.JobAbbreviation, size);
+                : ImGui.Button(gearset.JobAbbreviation, size);
         }
         else
         {
-            clicked = ImGui.Button(defaultGearset.JobAbbreviation, size);
+            clicked = ImGui.Button(gearset.JobAbbreviation, size);
         }
 
         if (clicked)
-            plugin.Gearsets.Equip(defaultGearset);
+            plugin.Gearsets.Equip(gearset);
+
+        if (hasDuplicateJob)
+            DrawDuplicateBadge(gearset);
 
         if (ImGui.IsItemHovered())
-            DrawTooltip(defaultGearset, gearsets.Length, isCurrent, isControllerFocused);
+            DrawTooltip(gearset, isDefault, isCurrent, isControllerFocused);
 
-        DrawMouseGearsetMenu(jobGearsets.Key, defaultGearset, gearsets);
+        DrawMouseGearsetMenu(gearset, isDefault);
 
         ImGui.PopStyleVar(2);
         ImGui.PopStyleColor(4);
         ImGui.PopID();
     }
 
-    private void DrawMouseGearsetMenu(uint classJobId, GearsetInfo defaultGearset, IReadOnlyList<GearsetInfo> gearsets)
+    private void DrawMouseGearsetMenu(GearsetInfo gearset, bool isDefault)
     {
         if (!ImGui.BeginPopupContextItem("gearsets"))
             return;
 
-        ImGui.TextColored(HeaderGold, $"{defaultGearset.JobName} ({defaultGearset.JobAbbreviation})");
-        ImGui.TextDisabled("Choose a gear set");
+        ImGui.TextColored(HeaderGold, $"{gearset.JobName} ({gearset.JobAbbreviation})");
+        ImGui.Text($"Gear Set: {gearset.GearsetName}");
+        ImGui.TextDisabled($"Gear Set #{gearset.GearsetId + 1}");
         ImGui.Separator();
 
-        foreach (var gearset in gearsets)
-        {
-            var isDefault = gearset.GearsetId == defaultGearset.GearsetId;
-            var label = $"{(isDefault ? "* " : string.Empty)}{gearset.GearsetName}  [#{gearset.GearsetId + 1}]##equip-{gearset.GearsetId}";
-            if (ImGui.MenuItem(label))
-                plugin.Gearsets.Equip(gearset);
-        }
+        if (ImGui.MenuItem("Equip this gear set"))
+            plugin.Gearsets.Equip(gearset);
 
-        if (gearsets.Count > 1 && ImGui.BeginMenu("Set default gear set"))
-        {
-            foreach (var gearset in gearsets)
-            {
-                var isDefault = gearset.GearsetId == defaultGearset.GearsetId;
-                if (ImGui.MenuItem($"{gearset.GearsetName}##default-{gearset.GearsetId}", string.Empty, isDefault))
-                    plugin.SetDefaultGearset(classJobId, gearset.GearsetId);
-            }
+        if (!isDefault && ImGui.MenuItem("Make default for this job"))
+            plugin.SetDefaultGearset(gearset);
 
-            ImGui.EndMenu();
+        var visibilityLabel = isDefault ? "Hide default tile" : "Remove from launcher";
+        if (ImGui.MenuItem(visibilityLabel))
+        {
+            if (isDefault)
+                plugin.SetDefaultGearsetVisibility(gearset, false);
+            else
+                plugin.SetAdditionalGearsetVisibility(gearset, false);
         }
 
         ImGui.EndPopup();
+    }
+
+    private void DrawDuplicateBadge(GearsetInfo gearset)
+    {
+        var badge = $"#{gearset.GearsetId + 1}";
+        var scale = GetScale();
+        var textSize = ImGui.CalcTextSize(badge);
+        var itemMin = ImGui.GetItemRectMin();
+        var itemMax = ImGui.GetItemRectMax();
+        var padding = new Vector2(3f, 1f) * scale;
+        var badgeSize = textSize + (padding * 2f);
+        var badgeMin = new Vector2(itemMax.X - badgeSize.X - (2f * scale), itemMax.Y - badgeSize.Y - (2f * scale));
+        var badgeMax = badgeMin + badgeSize;
+        var drawList = ImGui.GetWindowDrawList();
+        drawList.AddRectFilled(badgeMin, badgeMax, ImGui.ColorConvertFloat4ToU32(PanelBackground), 3f * scale);
+        drawList.AddText(badgeMin + padding, ImGui.ColorConvertFloat4ToU32(HeaderGold), badge);
     }
 
     private void DrawControllerFooter()
@@ -255,20 +273,21 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.TextColored(ControllerBlue, "R3 MODE  |  X EQUIP");
     }
 
-    private static void DrawTooltip(GearsetInfo gearset, int gearsetCount, bool isCurrent, bool isControllerFocused)
+    private static void DrawTooltip(GearsetInfo gearset, bool isDefault, bool isCurrent, bool isControllerFocused)
     {
         ImGui.BeginTooltip();
         ImGui.TextColored(HeaderGold, $"{gearset.JobName} ({gearset.JobAbbreviation})");
-        ImGui.Text($"Default: {gearset.GearsetName} [#{gearset.GearsetId + 1}]");
+        ImGui.Text($"Gear Set: {gearset.GearsetName}");
+        ImGui.TextDisabled($"Gear Set #{gearset.GearsetId + 1}");
         if (gearset.ItemLevel > 0)
             ImGui.TextDisabled($"Item level {gearset.ItemLevel}");
+        if (isDefault)
+            ImGui.TextColored(HeaderGold, "Default gear set");
         if (isCurrent)
-            ImGui.TextColored(HeaderGold, "Current job");
+            ImGui.TextColored(HeaderGold, "Currently equipped gear set");
         if (isControllerFocused)
             ImGui.TextColored(ControllerBlue, "Controller selection");
-        ImGui.TextDisabled(gearsetCount > 1
-            ? $"Right-click for {gearsetCount} gear sets and default selection."
-            : "Right-click for gear set options.");
+        ImGui.TextDisabled("Right-click for gear-set options.");
         ImGui.EndTooltip();
     }
 

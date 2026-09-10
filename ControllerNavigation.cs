@@ -25,7 +25,7 @@ public sealed class ControllerNavigation : IDisposable
     private readonly EdgeGate crossGate = new();
     private readonly EdgeGate circleGate = new();
 
-    private uint? selectedClassJobId;
+    private GearsetReference? selectedGearset;
     private GamepadButtonsFlags buttonsAwaitingRelease;
 
     public ControllerNavigation(Plugin plugin, IGamepadState gamepadState)
@@ -37,7 +37,7 @@ public sealed class ControllerNavigation : IDisposable
     public bool IsActive { get; private set; }
 
     // This is the one authoritative temporary controller selection.
-    public uint? SelectedClassJobId => selectedClassJobId;
+    public GearsetReference? SelectedGearset => selectedGearset;
 
     public void Update(IReadOnlyList<NavigationRow> rows, bool selectorAvailable)
     {
@@ -79,14 +79,14 @@ public sealed class ControllerNavigation : IDisposable
 
         EnsureValidSelection(rows);
 
-        if (crossPressed && selectedClassJobId.HasValue)
+        if (crossPressed && selectedGearset is not null)
         {
-            var classJobId = selectedClassJobId.Value;
+            var gearset = selectedGearset;
 
             // Close first so this physical press can produce at most one equip
             // request and normal gameplay resumes immediately afterward.
             Deactivate();
-            plugin.Gearsets.EquipDefault(classJobId);
+            plugin.Gearsets.Equip(gearset);
             return;
         }
 
@@ -109,12 +109,7 @@ public sealed class ControllerNavigation : IDisposable
         IsActive = true;
         ResetMovementState();
 
-        var currentJobId = Plugin.PlayerState.ClassJob.IsValid
-            ? Plugin.PlayerState.ClassJob.RowId
-            : 0;
-        selectedClassJobId = rows.Any(row => row.ClassJobIds.Contains(currentJobId))
-            ? currentJobId
-            : rows[0].ClassJobIds[0];
+        selectedGearset = FindInitialSelection(rows);
     }
 
     public void Deactivate()
@@ -126,23 +121,19 @@ public sealed class ControllerNavigation : IDisposable
         if (buttonsAwaitingRelease != GamepadButtonsFlags.None)
             SuppressButtons(buttonsAwaitingRelease);
         IsActive = false;
-        selectedClassJobId = null;
+        selectedGearset = null;
         ResetMovementState();
+        plugin.CloseManualPanel();
     }
 
     public void Dispose() => Deactivate();
 
     private void EnsureValidSelection(IReadOnlyList<NavigationRow> rows)
     {
-        if (selectedClassJobId.HasValue && rows.Any(row => row.ClassJobIds.Contains(selectedClassJobId.Value)))
+        if (selectedGearset is not null && rows.Any(row => row.Gearsets.Contains(selectedGearset)))
             return;
 
-        var currentJobId = Plugin.PlayerState.ClassJob.IsValid
-            ? Plugin.PlayerState.ClassJob.RowId
-            : 0;
-        selectedClassJobId = rows.Any(row => row.ClassJobIds.Contains(currentJobId))
-            ? currentJobId
-            : rows[0].ClassJobIds[0];
+        selectedGearset = FindInitialSelection(rows);
     }
 
     private void MoveHorizontal(IReadOnlyList<NavigationRow> rows, int delta)
@@ -150,8 +141,8 @@ public sealed class ControllerNavigation : IDisposable
         if (!TryFindSelectedCell(rows, out var rowIndex, out var column))
             return;
 
-        var row = rows[rowIndex].ClassJobIds;
-        selectedClassJobId = row[Math.Clamp(column + delta, 0, row.Count - 1)];
+        var row = rows[rowIndex].Gearsets;
+        selectedGearset = row[Math.Clamp(column + delta, 0, row.Count - 1)];
     }
 
     private void MoveVertical(IReadOnlyList<NavigationRow> rows, int delta)
@@ -160,17 +151,17 @@ public sealed class ControllerNavigation : IDisposable
             return;
 
         var nextRowIndex = Math.Clamp(rowIndex + delta, 0, rows.Count - 1);
-        var nextRow = rows[nextRowIndex].ClassJobIds;
-        selectedClassJobId = nextRow[Math.Min(column, nextRow.Count - 1)];
+        var nextRow = rows[nextRowIndex].Gearsets;
+        selectedGearset = nextRow[Math.Min(column, nextRow.Count - 1)];
     }
 
     private bool TryFindSelectedCell(IReadOnlyList<NavigationRow> rows, out int rowIndex, out int column)
     {
         for (var row = 0; row < rows.Count; row++)
         {
-            for (var col = 0; col < rows[row].ClassJobIds.Count; col++)
+            for (var col = 0; col < rows[row].Gearsets.Count; col++)
             {
-                if (rows[row].ClassJobIds[col] == selectedClassJobId)
+                if (rows[row].Gearsets[col].Equals(selectedGearset))
                 {
                     rowIndex = row;
                     column = col;
@@ -182,6 +173,31 @@ public sealed class ControllerNavigation : IDisposable
         rowIndex = 0;
         column = 0;
         return false;
+    }
+
+    private GearsetReference FindInitialSelection(IReadOnlyList<NavigationRow> rows)
+    {
+        var visible = rows.SelectMany(row => row.Gearsets).ToArray();
+        var currentGearset = plugin.Gearsets.GetCurrentGearset();
+        if (currentGearset is not null)
+        {
+            var currentReference = GearsetReference.From(currentGearset);
+            if (visible.Contains(currentReference))
+                return currentReference;
+        }
+
+        var currentJobId = Plugin.PlayerState.ClassJob.IsValid
+            ? Plugin.PlayerState.ClassJob.RowId
+            : 0;
+        var currentDefault = plugin.Gearsets.GetDefault(currentJobId);
+        if (currentDefault is not null)
+        {
+            var defaultReference = GearsetReference.From(currentDefault);
+            if (visible.Contains(defaultReference))
+                return defaultReference;
+        }
+
+        return visible[0];
     }
 
     private void LatchHeldSelectorButtons()
