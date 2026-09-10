@@ -2,8 +2,8 @@
   {
     "Author": "MTitan",
     "Name": "Classy Sentinel",
-    "Punchline": "Polished, role-based gearset switching bars.",
-    "Description": "Turns existing FFXIV gear sets into movable, lockable role bars with native job icons, saved defaults, alternate-set menus, dynamic role grouping, and safe handling for newly added jobs.",
+    "Punchline": "A polished, unified gearset launcher.",
+    "Description": "Turns existing FFXIV gear sets into one movable, lockable job panel with native icons, per-job filtering, controller navigation, saved defaults, alternate-set menus, dynamic role grouping, and safe handling for newly added jobs.",
     "InternalName": "ClassySentinel",
     "AssemblyVersion": "0.2.0.0",
     "TestingAssemblyVersion": "0.2.0.0",
