@@ -1,11 +1,19 @@
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.System.Input;
 
 namespace ClassySentinel;
 
 public sealed class ControllerNavigation : IDisposable
 {
-    private const float StickThreshold = 0.65f;
+    private static readonly GamepadButtonsFlags SelectorButtons =
+        GamepadButtonsFlags.R3
+        | GamepadButtonsFlags.DPadUp
+        | GamepadButtonsFlags.DPadDown
+        | GamepadButtonsFlags.DPadLeft
+        | GamepadButtonsFlags.DPadRight
+        | GamepadButtonsFlags.Cross
+        | GamepadButtonsFlags.Circle;
 
     private readonly Plugin plugin;
     private readonly IGamepadState gamepadState;
@@ -13,13 +21,12 @@ public sealed class ControllerNavigation : IDisposable
     private readonly RepeatGate rightGate = new();
     private readonly RepeatGate upGate = new();
     private readonly RepeatGate downGate = new();
-    private readonly Dictionary<GamepadButtons, bool> priorButtons = new();
+    private readonly EdgeGate r3Gate = new();
+    private readonly EdgeGate crossGate = new();
+    private readonly EdgeGate circleGate = new();
 
-    private bool restoreGamepadNav;
-    private bool chordWasDown;
-    private uint? focusedClassJobId;
-    private GearsetInfo[] pickerGearsets = Array.Empty<GearsetInfo>();
-    private int pickerIndex;
+    private uint? selectedClassJobId;
+    private GamepadButtonsFlags buttonsAwaitingRelease;
 
     public ControllerNavigation(Plugin plugin, IGamepadState gamepadState)
     {
@@ -29,16 +36,19 @@ public sealed class ControllerNavigation : IDisposable
 
     public bool IsActive { get; private set; }
 
-    public bool IsGearsetPickerOpen => pickerGearsets.Length > 0;
-
-    public uint? FocusedClassJobId => focusedClassJobId;
-
-    public IReadOnlyList<GearsetInfo> PickerGearsets => pickerGearsets;
-
-    public int PickerIndex => pickerIndex;
+    // This is the one authoritative temporary controller selection.
+    public uint? SelectedClassJobId => selectedClassJobId;
 
     public void Update(IReadOnlyList<NavigationRow> rows, bool selectorAvailable)
     {
+        SuppressConsumedButtonsUntilReleased();
+
+        // Update every action edge on every frame. This prevents an input held
+        // while opening or closing the selector from becoming a second action.
+        var r3Pressed = r3Gate.Pressed(IsDown(GamepadButtons.R3));
+        var crossPressed = crossGate.Pressed(IsDown(GamepadButtons.South));
+        var circlePressed = circleGate.Pressed(IsDown(GamepadButtons.East));
+
         if (!selectorAvailable || rows.Count == 0)
         {
             Deactivate();
@@ -47,69 +57,48 @@ public sealed class ControllerNavigation : IDisposable
 
         if (!IsActive)
         {
-            UpdateActivationChord(rows);
+            if (r3Pressed)
+            {
+                Activate(rows);
+                SuppressSelectorButtons();
+            }
+
             return;
         }
 
-        // Raw button state remains reliable while Dalamud is intercepting input.
-        gamepadState.EnableGamepadNav = true;
-        EnsureValidFocus(rows);
+        // Filter only the buttons owned by this temporary selector. We never
+        // enable Dalamud's global ImGui gamepad navigation, so the virtual mouse
+        // cursor remains untouched.
+        SuppressSelectorButtons();
+
+        if (r3Pressed || circlePressed)
+        {
+            Deactivate();
+            return;
+        }
+
+        EnsureValidSelection(rows);
+
+        if (crossPressed && selectedClassJobId.HasValue)
+        {
+            var classJobId = selectedClassJobId.Value;
+
+            // Close first so this physical press can produce at most one equip
+            // request and normal gameplay resumes immediately afterward.
+            Deactivate();
+            plugin.Gearsets.EquipDefault(classJobId);
+            return;
+        }
 
         var now = DateTime.UtcNow;
-        var stick = gamepadState.LeftStick;
-        var moveLeft = leftGate.Pulse(IsDown(GamepadButtons.DpadLeft) || stick.X <= -StickThreshold, now);
-        var moveRight = rightGate.Pulse(IsDown(GamepadButtons.DpadRight) || stick.X >= StickThreshold, now);
-        var moveUp = upGate.Pulse(IsDown(GamepadButtons.DpadUp) || stick.Y >= StickThreshold, now);
-        var moveDown = downGate.Pulse(IsDown(GamepadButtons.DpadDown) || stick.Y <= -StickThreshold, now);
-
-        if (IsGearsetPickerOpen)
-        {
-            if (moveLeft || moveUp)
-                MovePicker(-1);
-            else if (moveRight || moveDown)
-                MovePicker(1);
-
-            var equipPressed = ButtonPressed(GamepadButtons.South);
-            var defaultPressed = ButtonPressed(GamepadButtons.North);
-            var backPressed = ButtonPressed(GamepadButtons.East);
-
-            if (equipPressed)
-            {
-                plugin.Gearsets.Equip(pickerGearsets[pickerIndex]);
-                CloseGearsetPicker();
-            }
-            else if (defaultPressed)
-            {
-                var selected = pickerGearsets[pickerIndex];
-                plugin.SetDefaultGearset(selected.ClassJobId, selected.GearsetId);
-            }
-            else if (backPressed)
-            {
-                CloseGearsetPicker();
-            }
-
-            return;
-        }
-
-        if (moveLeft)
+        if (leftGate.Pulse(IsDown(GamepadButtons.DpadLeft), now))
             MoveHorizontal(rows, -1);
-        else if (moveRight)
+        else if (rightGate.Pulse(IsDown(GamepadButtons.DpadRight), now))
             MoveHorizontal(rows, 1);
-        else if (moveUp)
+        else if (upGate.Pulse(IsDown(GamepadButtons.DpadUp), now))
             MoveVertical(rows, -1);
-        else if (moveDown)
+        else if (downGate.Pulse(IsDown(GamepadButtons.DpadDown), now))
             MoveVertical(rows, 1);
-
-        var equipDefaultPressed = ButtonPressed(GamepadButtons.South);
-        var pickerPressed = ButtonPressed(GamepadButtons.West);
-        var exitPressed = ButtonPressed(GamepadButtons.East);
-
-        if (equipDefaultPressed && focusedClassJobId.HasValue)
-            plugin.Gearsets.EquipDefault(focusedClassJobId.Value);
-        else if (pickerPressed)
-            OpenGearsetPicker();
-        else if (exitPressed)
-            Deactivate();
     }
 
     public void Activate(IReadOnlyList<NavigationRow> rows)
@@ -117,15 +106,15 @@ public sealed class ControllerNavigation : IDisposable
         if (rows.Count == 0)
             return;
 
-        if (!IsActive)
-        {
-            restoreGamepadNav = gamepadState.EnableGamepadNav;
-            IsActive = true;
-            PrimeActionButtons();
-        }
+        IsActive = true;
+        ResetMovementState();
 
-        gamepadState.EnableGamepadNav = true;
-        EnsureValidFocus(rows);
+        var currentJobId = Plugin.PlayerState.ClassJob.IsValid
+            ? Plugin.PlayerState.ClassJob.RowId
+            : 0;
+        selectedClassJobId = rows.Any(row => row.ClassJobIds.Contains(currentJobId))
+            ? currentJobId
+            : rows[0].ClassJobIds[0];
     }
 
     public void Deactivate()
@@ -133,72 +122,55 @@ public sealed class ControllerNavigation : IDisposable
         if (!IsActive)
             return;
 
+        LatchHeldSelectorButtons();
+        if (buttonsAwaitingRelease != GamepadButtonsFlags.None)
+            SuppressButtons(buttonsAwaitingRelease);
         IsActive = false;
-        focusedClassJobId = null;
-        CloseGearsetPicker();
-        ResetInputState();
-        gamepadState.EnableGamepadNav = restoreGamepadNav;
+        selectedClassJobId = null;
+        ResetMovementState();
     }
 
     public void Dispose() => Deactivate();
 
-    private void UpdateActivationChord(IReadOnlyList<NavigationRow> rows)
+    private void EnsureValidSelection(IReadOnlyList<NavigationRow> rows)
     {
-        if (!plugin.Configuration.EnableControllerActivationChord)
-        {
-            chordWasDown = false;
-            return;
-        }
-
-        // Optional and off by default. Reading does not consume gameplay input.
-        var chordDown = IsDown(GamepadButtons.L1) && IsDown(GamepadButtons.R1);
-        if (chordDown && !chordWasDown)
-            Activate(rows);
-        chordWasDown = chordDown;
-    }
-
-    private void EnsureValidFocus(IReadOnlyList<NavigationRow> rows)
-    {
-        if (focusedClassJobId.HasValue && rows.Any(row => row.ClassJobIds.Contains(focusedClassJobId.Value)))
+        if (selectedClassJobId.HasValue && rows.Any(row => row.ClassJobIds.Contains(selectedClassJobId.Value)))
             return;
 
         var currentJobId = Plugin.PlayerState.ClassJob.IsValid
             ? Plugin.PlayerState.ClassJob.RowId
             : 0;
-        focusedClassJobId = rows.Any(row => row.ClassJobIds.Contains(currentJobId))
+        selectedClassJobId = rows.Any(row => row.ClassJobIds.Contains(currentJobId))
             ? currentJobId
             : rows[0].ClassJobIds[0];
     }
 
     private void MoveHorizontal(IReadOnlyList<NavigationRow> rows, int delta)
     {
-        if (!TryFindFocusedCell(rows, out var rowIndex, out var column))
+        if (!TryFindSelectedCell(rows, out var rowIndex, out var column))
             return;
 
         var row = rows[rowIndex].ClassJobIds;
-        var nextColumn = (column + delta + row.Count) % row.Count;
-        focusedClassJobId = row[nextColumn];
+        selectedClassJobId = row[Math.Clamp(column + delta, 0, row.Count - 1)];
     }
 
     private void MoveVertical(IReadOnlyList<NavigationRow> rows, int delta)
     {
-        if (!TryFindFocusedCell(rows, out var rowIndex, out var column))
+        if (!TryFindSelectedCell(rows, out var rowIndex, out var column))
             return;
 
-        // Vertical movement clamps at the panel edges; the destination chooses
-        // the closest available column in the next visible row.
         var nextRowIndex = Math.Clamp(rowIndex + delta, 0, rows.Count - 1);
         var nextRow = rows[nextRowIndex].ClassJobIds;
-        focusedClassJobId = nextRow[Math.Min(column, nextRow.Count - 1)];
+        selectedClassJobId = nextRow[Math.Min(column, nextRow.Count - 1)];
     }
 
-    private bool TryFindFocusedCell(IReadOnlyList<NavigationRow> rows, out int rowIndex, out int column)
+    private bool TryFindSelectedCell(IReadOnlyList<NavigationRow> rows, out int rowIndex, out int column)
     {
         for (var row = 0; row < rows.Count; row++)
         {
             for (var col = 0; col < rows[row].ClassJobIds.Count; col++)
             {
-                if (rows[row].ClassJobIds[col] == focusedClassJobId)
+                if (rows[row].ClassJobIds[col] == selectedClassJobId)
                 {
                     rowIndex = row;
                     column = col;
@@ -212,60 +184,96 @@ public sealed class ControllerNavigation : IDisposable
         return false;
     }
 
-    private void OpenGearsetPicker()
+    private void LatchHeldSelectorButtons()
     {
-        if (!focusedClassJobId.HasValue)
-            return;
-
-        pickerGearsets = plugin.Gearsets.Gearsets
-            .Where(x => x.ClassJobId == focusedClassJobId.Value)
-            .OrderBy(x => x.GearsetId)
-            .ToArray();
-
-        if (pickerGearsets.Length <= 1)
+        foreach (var (button, flag) in ButtonMappings())
         {
-            CloseGearsetPicker();
+            if (IsDown(button))
+                buttonsAwaitingRelease |= flag;
+        }
+    }
+
+    private void SuppressConsumedButtonsUntilReleased()
+    {
+        if (buttonsAwaitingRelease == GamepadButtonsFlags.None)
             return;
+
+        var suppressThisFrame = buttonsAwaitingRelease;
+        var stillHeld = GamepadButtonsFlags.None;
+        foreach (var (button, flag) in ButtonMappings())
+        {
+            if ((buttonsAwaitingRelease & flag) != 0 && IsDown(button))
+                stillHeld |= flag;
         }
 
-        var currentDefault = plugin.Gearsets.GetDefault(focusedClassJobId.Value);
-        pickerIndex = Math.Max(0, Array.FindIndex(pickerGearsets, x => x.GearsetId == currentDefault?.GearsetId));
+        buttonsAwaitingRelease = stillHeld;
+        // Also filter the release frame before dropping the latch.
+        SuppressButtons(suppressThisFrame);
     }
 
-    private void CloseGearsetPicker()
+    private void SuppressSelectorButtons() => SuppressButtons(SelectorButtons);
+
+    private unsafe void SuppressButtons(GamepadButtonsFlags buttons)
     {
-        pickerGearsets = Array.Empty<GearsetInfo>();
-        pickerIndex = 0;
+        if (gamepadState.GamepadInputAddress == 0)
+            return;
+
+        var padDevice = (PadDevice*)gamepadState.GamepadInputAddress;
+        ref var input = ref padDevice->GamepadInputData;
+        var keepMask = ~buttons;
+
+        input.Buttons &= keepMask;
+        input.ButtonsPressed &= keepMask;
+        input.ButtonsReleased &= keepMask;
+        input.ButtonsRepeat &= keepMask;
+
+        if ((buttons & GamepadButtonsFlags.R3) != 0)
+            input.R3 = 0;
+        if ((buttons & GamepadButtonsFlags.Cross) != 0)
+            input.Cross = 0;
+        if ((buttons & GamepadButtonsFlags.Circle) != 0)
+            input.Circle = 0;
+        if ((buttons & GamepadButtonsFlags.DPadUp) != 0)
+            input.DPadUp = 0;
+        if ((buttons & GamepadButtonsFlags.DPadDown) != 0)
+            input.DPadDown = 0;
+        if ((buttons & GamepadButtonsFlags.DPadLeft) != 0)
+            input.DPadLeft = 0;
+        if ((buttons & GamepadButtonsFlags.DPadRight) != 0)
+            input.DPadRight = 0;
     }
 
-    private void MovePicker(int delta)
+    private static IEnumerable<(GamepadButtons Button, GamepadButtonsFlags Flag)> ButtonMappings()
     {
-        pickerIndex = (pickerIndex + delta + pickerGearsets.Length) % pickerGearsets.Length;
-    }
-
-    private bool ButtonPressed(GamepadButtons button)
-    {
-        var down = IsDown(button);
-        var previous = priorButtons.TryGetValue(button, out var prior) && prior;
-        priorButtons[button] = down;
-        return down && !previous;
+        yield return (GamepadButtons.R3, GamepadButtonsFlags.R3);
+        yield return (GamepadButtons.DpadUp, GamepadButtonsFlags.DPadUp);
+        yield return (GamepadButtons.DpadDown, GamepadButtonsFlags.DPadDown);
+        yield return (GamepadButtons.DpadLeft, GamepadButtonsFlags.DPadLeft);
+        yield return (GamepadButtons.DpadRight, GamepadButtonsFlags.DPadRight);
+        yield return (GamepadButtons.South, GamepadButtonsFlags.Cross);
+        yield return (GamepadButtons.East, GamepadButtonsFlags.Circle);
     }
 
     private bool IsDown(GamepadButtons button) => gamepadState.Raw(button) > 0.5f;
 
-    private void PrimeActionButtons()
+    private void ResetMovementState()
     {
-        foreach (var button in new[] { GamepadButtons.South, GamepadButtons.East, GamepadButtons.West, GamepadButtons.North })
-            priorButtons[button] = IsDown(button);
-    }
-
-    private void ResetInputState()
-    {
-        priorButtons.Clear();
         leftGate.Reset();
         rightGate.Reset();
         upGate.Reset();
         downGate.Reset();
+    }
+
+    private sealed class EdgeGate
+    {
+        private bool wasDown;
+
+        public bool Pressed(bool isDown)
+        {
+            var pressed = isDown && !wasDown;
+            wasDown = isDown;
+            return pressed;
+        }
     }
 
     private sealed class RepeatGate

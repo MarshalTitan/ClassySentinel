@@ -41,7 +41,7 @@ public sealed class SettingsWindow : Window
             changed = true;
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("This disables mouse interaction while locked. Controller focus and commands still work.");
+            ImGui.SetTooltip("This disables mouse interaction while locked. The temporary R3 selector still works.");
 
         var headers = plugin.Configuration.ShowCategoryHeaders;
         if (ImGui.Checkbox("Show category headers", ref headers))
@@ -74,28 +74,10 @@ public sealed class SettingsWindow : Window
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Text("Controller");
-
-        var activationChord = plugin.Configuration.EnableControllerActivationChord;
-        if (ImGui.Checkbox("Enable L1 + R1 focus shortcut", ref activationChord))
-        {
-            plugin.Configuration.EnableControllerActivationChord = activationChord;
-            changed = true;
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Off by default. The shortcut is only observed while the panel is visible; input is intercepted only after focus activates.");
-
-        if (plugin.Controller.IsActive)
-        {
-            if (ImGui.Button("Exit controller focus"))
-                plugin.DeactivateControllerFocus();
-        }
-        else if (ImGui.Button("Activate controller focus"))
-        {
-            plugin.ActivateControllerFocus();
-        }
-
-        ImGui.TextDisabled("While focused: D-pad/left stick moves, A equips, X opens gear sets, B exits.");
-        ImGui.TextDisabled("In the gear-set picker: A equips, Y sets default, B returns.");
+        ImGui.TextDisabled("R3 - Open / cancel Classy Sentinel");
+        ImGui.TextDisabled("D-pad - Navigate visible jobs");
+        ImGui.TextDisabled("X / Cross - Equip selected job and exit");
+        ImGui.TextDisabled("Circle - Cancel");
 
         ImGui.Spacing();
         ImGui.Separator();

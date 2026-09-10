@@ -159,25 +159,11 @@ public sealed class UnifiedPanelWindow : Window
     private void DrawPanelHeader()
     {
         ImGui.TextColored(HeaderGold, "CLASSY SENTINEL");
-        ImGui.SameLine();
-
-        var active = plugin.Controller.IsActive;
-        ImGui.PushStyleColor(ImGuiCol.Button, active ? ControllerIdle : ButtonIdle);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ButtonHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ButtonActive);
-        if (ImGui.SmallButton(active ? "EXIT GAMEPAD##controller" : "GAMEPAD FOCUS##controller"))
+        if (plugin.Controller.IsActive)
         {
-            if (active)
-                plugin.DeactivateControllerFocus();
-            else
-                plugin.ActivateControllerFocus();
+            ImGui.SameLine();
+            ImGui.TextColored(ControllerBlue, "R3 SELECT");
         }
-        ImGui.PopStyleColor(3);
-
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(active
-                ? "Return controller input to FFXIV."
-                : "Intentionally focus this panel for controller navigation.");
 
         ImGui.Separator();
         ImGui.Spacing();
@@ -190,7 +176,7 @@ public sealed class UnifiedPanelWindow : Window
         var isCurrent = Plugin.PlayerState.ClassJob.IsValid
                         && Plugin.PlayerState.ClassJob.RowId == jobGearsets.Key;
         var isControllerFocused = plugin.Controller.IsActive
-                                  && plugin.Controller.FocusedClassJobId == jobGearsets.Key;
+                                  && plugin.Controller.SelectedClassJobId == jobGearsets.Key;
         var size = new Vector2(plugin.Configuration.ButtonSize) * GetScale();
 
         ImGui.PushID($"job-{jobGearsets.Key}");
@@ -266,28 +252,7 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
-
-        if (plugin.Controller.IsGearsetPickerOpen)
-        {
-            ImGui.TextColored(ControllerBlue, "ALTERNATE GEAR SET");
-            var gearsets = plugin.Controller.PickerGearsets;
-            for (var index = 0; index < gearsets.Count; index++)
-            {
-                var gearset = gearsets[index];
-                var isSelected = index == plugin.Controller.PickerIndex;
-                var isDefault = plugin.Gearsets.GetDefault(gearset.ClassJobId)?.GearsetId == gearset.GearsetId;
-                ImGui.TextColored(
-                    isSelected ? ControllerBlue : Vector4.One,
-                    $"{(isSelected ? ">" : " ")} {(isDefault ? "*" : " ")} {gearset.GearsetName} [#{gearset.GearsetId + 1}]");
-            }
-
-            ImGui.TextDisabled("D-pad/Stick choose  |  A equip  |  Y default  |  B back");
-        }
-        else
-        {
-            ImGui.TextColored(ControllerBlue, "CONTROLLER FOCUS ACTIVE");
-            ImGui.TextDisabled("D-pad/Stick move  |  A equip  |  X gear sets  |  B exit");
-        }
+        ImGui.TextColored(ControllerBlue, "R3 MODE  |  X EQUIP");
     }
 
     private static void DrawTooltip(GearsetInfo gearset, int gearsetCount, bool isCurrent, bool isControllerFocused)
@@ -300,7 +265,7 @@ public sealed class UnifiedPanelWindow : Window
         if (isCurrent)
             ImGui.TextColored(HeaderGold, "Current job");
         if (isControllerFocused)
-            ImGui.TextColored(ControllerBlue, "Controller focus");
+            ImGui.TextColored(ControllerBlue, "Controller selection");
         ImGui.TextDisabled(gearsetCount > 1
             ? $"Right-click for {gearsetCount} gear sets and default selection."
             : "Right-click for gear set options.");

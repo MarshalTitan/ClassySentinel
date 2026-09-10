@@ -5,7 +5,7 @@ namespace ClassySentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
 
     public bool Visible { get; set; } = true;
 
@@ -20,8 +20,6 @@ public sealed class Configuration : IPluginConfiguration
     public float PanelScale { get; set; } = 1f;
 
     public int ButtonsPerRow { get; set; } = 8;
-
-    public bool EnableControllerActivationChord { get; set; }
 
     // Stable ClassJob row ID -> gearset ID. Never tied to UI position.
     public Dictionary<uint, int> DefaultGearsets { get; set; } = new();

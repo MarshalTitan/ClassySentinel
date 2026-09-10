@@ -2,7 +2,8 @@
   "Name": "Classy Sentinel",
   "Author": "MTitan",
   "Punchline": "A polished, unified gearset launcher.",
-  "Description": "Turns your existing FFXIV gear sets into one movable, lockable job panel with native icons, per-job filtering, controller navigation, default gearsets, alternate-set menus, and automatic handling for new jobs.",
+  "Description": "Turns your existing FFXIV gear sets into one compact, movable job panel with native icons, per-job filtering, temporary R3 controller selection, default gearsets, alternate-set menus, and automatic handling for new jobs.",
   "RepoUrl": "https://github.com/MarshalTitan/ClassySentinel",
+  "IconUrl": "https://raw.githubusercontent.com/MarshalTitan/ClassySentinel/main/assets/icon.png",
   "Tags": ["gearsets", "jobs", "ui", "launcher"]
 }

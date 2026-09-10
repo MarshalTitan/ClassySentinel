@@ -1,5 +1,9 @@
 # Classy Sentinel
 
+<p align="center">
+  <img src="assets/icon.png" alt="Classy Sentinel crest" width="256" height="256">
+</p>
+
 Classy Sentinel is a standalone Dalamud plugin that turns the player's existing
 FFXIV gear sets into one polished, movable job-switching panel.
 
@@ -16,16 +20,17 @@ FFXIV gear sets into one polished, movable job-switching panel.
   scaling, hiding, and wrapping as a single unit.
 - Categories and individual jobs can be hidden; remaining buttons reflow with
   no reserved gaps.
-- Deliberate controller focus supports D-pad/left-stick navigation, a separate
-  cyan focus indicator, default equip, alternate gear-set selection, and exit.
+- A temporary R3 controller selector supports D-pad navigation, a separate cyan
+  selection indicator, single-request default equip, and immediate exit.
 - Controller input is not intercepted merely because the panel is visible.
+- Includes an official 512x512 transparent Classy Sentinel crest; FFXIV job
+  icons continue to load from game assets at runtime.
 - New or temporarily unknown jobs remain visible under **Other / New Jobs**.
 - Preferences are keyed by stable ClassJob row IDs, not screen position.
 
 ## Commands
 
 - `/classysentinel` or `/csentinel` — toggle the unified panel
-- `/csentinel focus` / `unfocus` — enter or leave controller focus
 - `/classysentinel config` — open settings
 - `/classysentinel show` / `hide`
 - `/classysentinel lock` / `unlock`
@@ -33,15 +38,13 @@ FFXIV gear sets into one polished, movable job-switching panel.
 
 ## Controller controls
 
-Activate controller focus with the panel button or `/csentinel focus`. An
-optional L1 + R1 activation shortcut can be enabled in settings and is off by
-default.
+With the unified panel visible, press R3 to open or cancel the temporary job
+selector. It does not use Dalamud's global ImGui gamepad-navigation mode.
 
-- D-pad or left stick: move through the visible grid
-- A / Cross: equip the focused job's default gear set
-- X / Square: open alternate gear sets
-- B / Circle: close the picker or exit controller focus
-- Y / Triangle in the picker: set the highlighted gear set as default
+- R3: open or cancel selection
+- D-pad: move through the visible grid
+- X / Cross: equip the selected job's default gear set, then exit
+- Circle: cancel selection
 
 ## Building
 

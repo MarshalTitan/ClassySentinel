@@ -40,7 +40,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var command = new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle Classy Sentinel. Options: show, hide, focus, unfocus, lock, unlock, config, refresh",
+            HelpMessage = "Toggle Classy Sentinel. Options: show, hide, lock, unlock, config, refresh",
         };
         CommandManager.AddHandler(CommandName, command);
         CommandManager.AddHandler(ShortCommandName, command);
@@ -113,17 +113,6 @@ public sealed class Plugin : IDalamudPlugin
         SaveConfiguration();
     }
 
-    public void ActivateControllerFocus()
-    {
-        Configuration.Visible = true;
-        mainPanel.IsOpen = true;
-        mainPanel.BringToFront();
-        Controller.Activate(mainPanel.BuildNavigationRows());
-        SaveConfiguration();
-    }
-
-    public void DeactivateControllerFocus() => Controller.Deactivate();
-
     public void SaveConfiguration()
     {
         PluginInterface.SavePluginConfig(Configuration);
@@ -167,13 +156,6 @@ public sealed class Plugin : IDalamudPlugin
                 Configuration.Visible = false;
                 Controller.Deactivate();
                 SaveConfiguration();
-                break;
-            case "focus":
-            case "controller":
-                ActivateControllerFocus();
-                break;
-            case "unfocus":
-                DeactivateControllerFocus();
                 break;
             case "lock":
                 Configuration.Locked = true;
