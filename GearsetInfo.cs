@@ -9,5 +9,5 @@ public sealed record GearsetInfo(
     uint IconId,
     short ItemLevel,
     byte UiPriority,
-    JobCategory Category);
-
+    JobCategory Category,
+    RoleHue RoleHue);

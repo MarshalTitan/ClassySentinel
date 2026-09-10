@@ -2,7 +2,7 @@
   "Name": "Classy Sentinel",
   "Author": "MTitan",
   "Punchline": "A polished, temporary gear-set launcher.",
-  "Description": "Opens a compact native-icon launcher with R3, supports multiple exact gear sets per job, equips the highlighted set with Cross, and disappears immediately after selection. Additional sets are opt-in and saved with safe compound identities.",
+  "Description": "Opens a compact native-icon launcher with R3, supports multiple exact gear sets per job, shows the selected set name during D-pad navigation, and uses subtle data-driven role hues with distinct current-set and controller-focus treatments.",
   "RepoUrl": "https://github.com/MarshalTitan/ClassySentinel",
   "IconUrl": "https://raw.githubusercontent.com/MarshalTitan/ClassySentinel/main/assets/icon.png",
   "Tags": ["gearsets", "jobs", "ui", "launcher"]

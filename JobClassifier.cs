@@ -30,5 +30,15 @@ public static class JobClassifier
             _ => JobCategory.OtherNewJobs,
         };
     }
-}
 
+    public static RoleHue ClassifyRoleHue(ClassJob classJob)
+        => (classJob.Role, classJob.PrimaryStat) switch
+        {
+            (1, _) => RoleHue.Tank,
+            (4, _) => RoleHue.Healer,
+            (2, _) => RoleHue.Melee,
+            (3, 2) => RoleHue.PhysicalRanged,
+            (3, 4) => RoleHue.MagicalRanged,
+            _ => RoleHue.Neutral,
+        };
+}

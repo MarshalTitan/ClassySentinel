@@ -30,6 +30,13 @@ FFXIV gear sets into a polished, temporary job-switching launcher.
   shows the full FFXIV gear-set name, number, and item level.
 - R3 selection supports D-pad navigation, a separate cyan selection indicator,
   one exact equip request, and immediate exit.
+- Controller selection draws the highlighted FFXIV gear-set name directly beside
+  its tile without moving the mouse cursor or simulating mouse hover.
+- Subtle data-driven role hues distinguish tanks (blue), healers (green), melee
+  (red), physical ranged (orange), and magical ranged (purple). Limited Jobs keep
+  a neutral category header while each tile uses its actual combat-role hue.
+- Equipped tiles retain their gold treatment and controller focus uses a thicker
+  cyan outline and glow, keeping all three visual states distinct.
 - Controller input is not intercepted merely because the panel is visible.
 - Includes an official 512x512 transparent Classy Sentinel crest; FFXIV job
   icons continue to load from game assets at runtime.

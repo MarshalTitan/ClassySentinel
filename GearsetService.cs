@@ -187,7 +187,8 @@ public sealed class GearsetService
                         icon > 0 ? (uint)icon : 0,
                         entry.ItemLevel,
                         classJob.UIPriority,
-                        JobClassifier.Classify(classJob)));
+                        JobClassifier.Classify(classJob),
+                        JobClassifier.ClassifyRoleHue(classJob)));
                 }
                 else
                 {
@@ -202,7 +203,8 @@ public sealed class GearsetService
                         icon > 0 ? (uint)icon : 0,
                         entry.ItemLevel,
                         byte.MaxValue,
-                        JobCategory.OtherNewJobs));
+                        JobCategory.OtherNewJobs,
+                        RoleHue.Neutral));
                 }
             }
 
