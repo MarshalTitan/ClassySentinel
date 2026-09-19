@@ -116,7 +116,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void RememberPanelPosition(Vector2 position)
     {
-        if (Configuration.Locked)
+        if (!PanelPositionPolicy.IsFinite(position))
             return;
 
         var current = Configuration.PanelPosition;

@@ -22,9 +22,10 @@ public sealed class UnifiedPanelWindow : Window
     private static readonly Vector4 ControllerBlue = new(0.20f, 0.78f, 0.96f, 1f);
     private static readonly Vector4 ControllerGlow = new(0.35f, 0.88f, 1f, 0.48f);
     private static readonly Vector4 ControllerLabelText = new(0.94f, 0.98f, 1f, 1f);
+    private static readonly Vector2 MinimumReachableArea = new(48f, 32f);
 
     private readonly Plugin plugin;
-    private bool forcePositionOnce;
+    private bool forcePositionOnce = true;
 
     public UnifiedPanelWindow(Plugin plugin)
         : base("Classy Sentinel##ClassySentinel-Panel")
@@ -34,7 +35,7 @@ public sealed class UnifiedPanelWindow : Window
         ShowCloseButton = false;
         RespectCloseHotkey = false;
         Position = GetConfiguredOrDefaultPosition();
-        PositionCondition = ImGuiCond.FirstUseEver;
+        PositionCondition = ImGuiCond.Always;
     }
 
     public override bool DrawConditions()
@@ -57,7 +58,16 @@ public sealed class UnifiedPanelWindow : Window
             Flags |= ImGuiWindowFlags.NoInputs;
 
         if (forcePositionOnce)
+        {
+            var viewport = ImGui.GetMainViewport();
+            Position = PanelPositionPolicy.KeepReachable(
+                GetConfiguredOrDefaultPosition(),
+                GetDefaultPosition(),
+                viewport.WorkPos,
+                viewport.WorkSize,
+                MinimumReachableArea);
             PositionCondition = ImGuiCond.Always;
+        }
 
         var scale = GetScale();
         ImGui.PushStyleColor(ImGuiCol.WindowBg, PanelBackground);
@@ -109,12 +119,12 @@ public sealed class UnifiedPanelWindow : Window
 
         if (plugin.Controller.IsActive)
             DrawControllerFooter();
+
+        RememberCurrentPosition();
     }
 
     public override void PostDraw()
     {
-        plugin.RememberPanelPosition(ImGui.GetWindowPos());
-
         if (forcePositionOnce)
         {
             forcePositionOnce = false;
@@ -366,6 +376,31 @@ public sealed class UnifiedPanelWindow : Window
     }
 
     private static Vector2 GetDefaultPosition() => new(180f, 220f);
+
+    private void RememberCurrentPosition()
+    {
+        // Draw() executes while this panel is still the active ImGui window.
+        // WindowHost invokes PostDraw() only after ImGui.End(), so querying the
+        // current window there can capture an unrelated window's coordinates.
+        var position = ImGui.GetWindowPos();
+        var viewport = ImGui.GetMainViewport();
+        var reachablePosition = PanelPositionPolicy.KeepReachable(
+            position,
+            GetDefaultPosition(),
+            viewport.WorkPos,
+            viewport.WorkSize,
+            ImGui.GetWindowSize());
+
+        if (Vector2.DistanceSquared(position, reachablePosition) >= 0.25f)
+        {
+            ImGui.SetWindowPos(reachablePosition, ImGuiCond.Always);
+            position = reachablePosition;
+        }
+
+        // Keep the Window fallback synchronized without forcing it each frame.
+        Position = position;
+        plugin.RememberPanelPosition(position);
+    }
 
     private float GetScale()
         => ImGuiHelpers.GlobalScale * Math.Clamp(plugin.Configuration.PanelScale, 0.6f, 1.6f);
