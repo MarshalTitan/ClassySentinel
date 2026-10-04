@@ -303,7 +303,8 @@ public sealed class SettingsWindow : Window
 
                     if (!isDefault)
                     {
-                        ImGui.SameLine();
+                        if (!modern)
+                            ImGui.SameLine();
                         if (ImGui.SmallButton($"Make default##default-{gearset.ClassJobId}-{gearset.GearsetId}"))
                             plugin.SetDefaultGearset(gearset);
                     }
