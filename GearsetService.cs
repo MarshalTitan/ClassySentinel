@@ -51,6 +51,9 @@ public sealed class GearsetService
 
         if (configuration.DefaultGearsetEntries.TryGetValue(classJobId, out var configured))
         {
+            if (!GearsetReference.IsValidSavedReference(configured))
+                return matching.OrderBy(x => x.GearsetId).First();
+
             // Never fall through to a different entry when a saved default no
             // longer matches. The stale reference remains visible in settings.
             return matching.FirstOrDefault(configured.Matches);
@@ -77,8 +80,8 @@ public sealed class GearsetService
         return visible;
     }
 
-    public GearsetInfo? FindExact(GearsetReference reference)
-        => gearsets.FirstOrDefault(reference.Matches);
+    public GearsetInfo? FindExact(GearsetReference? reference)
+        => GearsetReferenceLookup.FindExact(gearsets, reference);
 
     public unsafe GearsetInfo? GetCurrentGearset()
     {
@@ -90,8 +93,14 @@ public sealed class GearsetService
         return gearsets.FirstOrDefault(gearset => gearset.GearsetId == currentIndex);
     }
 
-    public bool Equip(GearsetReference reference)
+    public bool Equip(GearsetReference? reference)
     {
+        if (!GearsetReference.IsValidSavedReference(reference))
+        {
+            log.Warning("Ignored an invalid saved gear-set reference.");
+            return false;
+        }
+
         var gearset = FindExact(reference);
         if (gearset is not null)
             return Equip(gearset);

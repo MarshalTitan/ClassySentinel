@@ -347,10 +347,12 @@ public sealed class SettingsWindow : Window
     private void DrawUnavailableGearsets(ref bool changed, bool modern)
     {
         var unavailableDefaults = plugin.Configuration.DefaultGearsetEntries
-            .Where(saved => plugin.Gearsets.FindExact(saved.Value) is null)
+            .Where(saved => GearsetReference.IsValidSavedReference(saved.Value)
+                            && plugin.Gearsets.FindExact(saved.Value) is null)
             .ToArray();
         var unavailableExtras = plugin.Configuration.AdditionalGearsets
-            .Where(saved => plugin.Gearsets.FindExact(saved) is null)
+            .Where(saved => GearsetReference.IsValidSavedReference(saved)
+                            && plugin.Gearsets.FindExact(saved) is null)
             .ToArray();
 
         if (unavailableDefaults.Length == 0 && unavailableExtras.Length == 0)
@@ -366,7 +368,8 @@ public sealed class SettingsWindow : Window
             if (ImGui.SmallButton($"Remove##missing-default-{classJobId}-{saved.GearsetId}"))
             {
                 plugin.Configuration.DefaultGearsetEntries.Remove(classJobId);
-                plugin.Configuration.HiddenDefaultGearsets.RemoveAll(entry => entry.Equals(saved));
+                plugin.Configuration.HiddenDefaultGearsets.RemoveAll(
+                    entry => !GearsetReference.IsValidSavedReference(entry) || saved.Equals(entry));
                 changed = true;
             }
         }
@@ -377,7 +380,8 @@ public sealed class SettingsWindow : Window
             ImGui.SameLine();
             if (ImGui.SmallButton($"Remove##missing-extra-{saved.ImGuiId}"))
             {
-                plugin.Configuration.AdditionalGearsets.RemoveAll(entry => entry.Equals(saved));
+                plugin.Configuration.AdditionalGearsets.RemoveAll(
+                    entry => !GearsetReference.IsValidSavedReference(entry) || saved.Equals(entry));
                 changed = true;
             }
         }

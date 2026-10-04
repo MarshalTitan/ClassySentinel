@@ -6,7 +6,13 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../Configuration.cs" Link="Configuration.cs" />
+    <Compile Include="../../GearsetInfo.cs" Link="GearsetInfo.cs" />
+    <Compile Include="../../GearsetReference.cs" Link="GearsetReference.cs" />
+    <Compile Include="../../GearsetReferenceLookup.cs" Link="GearsetReferenceLookup.cs" />
+    <Compile Include="../../JobCategory.cs" Link="JobCategory.cs" />
     <Compile Include="../../PanelPositionPolicy.cs" Link="PanelPositionPolicy.cs" />
+    <Compile Include="../../RoleHue.cs" Link="RoleHue.cs" />
     <Compile Include="../../ThemeMigrationPolicy.cs" Link="ThemeMigrationPolicy.cs" />
   </ItemGroup>
 </Project>

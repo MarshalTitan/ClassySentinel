@@ -86,20 +86,24 @@ public sealed class Plugin : IDalamudPlugin
 
         Configuration.DefaultGearsetEntries[gearset.ClassJobId] = GearsetReference.From(gearset);
         Configuration.DefaultGearsets.Remove(gearset.ClassJobId);
-        Configuration.AdditionalGearsets.RemoveAll(saved => saved.Matches(gearset));
+        Configuration.AdditionalGearsets.RemoveAll(
+            saved => !GearsetReference.IsValidSavedReference(saved) || saved.Matches(gearset));
         if (preservePrevious
             && previousDefault is not null
-            && !Configuration.AdditionalGearsets.Any(saved => saved.Matches(previousDefault)))
+            && !Configuration.AdditionalGearsets.Any(
+                saved => GearsetReference.IsValidSavedReference(saved) && saved.Matches(previousDefault)))
         {
             Configuration.AdditionalGearsets.Add(GearsetReference.From(previousDefault));
         }
-        Configuration.HiddenDefaultGearsets.RemoveAll(saved => saved.ClassJobId == gearset.ClassJobId);
+        Configuration.HiddenDefaultGearsets.RemoveAll(
+            saved => !GearsetReference.IsValidSavedReference(saved) || saved.ClassJobId == gearset.ClassJobId);
         SaveConfiguration();
     }
 
     public void SetAdditionalGearsetVisibility(GearsetInfo gearset, bool visible)
     {
-        Configuration.AdditionalGearsets.RemoveAll(saved => saved.Matches(gearset));
+        Configuration.AdditionalGearsets.RemoveAll(
+            saved => !GearsetReference.IsValidSavedReference(saved) || saved.Matches(gearset));
         if (visible)
             Configuration.AdditionalGearsets.Add(GearsetReference.From(gearset));
         SaveConfiguration();
@@ -140,7 +144,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public void SetDefaultGearsetVisibility(GearsetInfo gearset, bool visible)
     {
-        Configuration.HiddenDefaultGearsets.RemoveAll(saved => saved.Matches(gearset));
+        Configuration.HiddenDefaultGearsets.RemoveAll(
+            saved => !GearsetReference.IsValidSavedReference(saved) || saved.Matches(gearset));
         if (!visible)
             Configuration.HiddenDefaultGearsets.Add(GearsetReference.From(gearset));
         SaveConfiguration();
@@ -170,9 +175,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private void MaintainGearsetReferences()
     {
-        var changed = Configuration.TryMigrateGearsetReferences(Gearsets.Gearsets);
+        var repaired = Configuration.TryRepairSavedGearsetReferences();
+        var changed = repaired;
+        changed |= Configuration.TryMigrateGearsetReferences(Gearsets.Gearsets);
         changed |= Configuration.TryMigrateTheme();
         changed |= Configuration.EnsureAutomaticDefaults(Gearsets.Gearsets);
+        if (repaired)
+            Log.Warning("Removed one or more invalid saved gear-set references from configuration.");
         if (changed)
             SaveConfiguration();
     }
