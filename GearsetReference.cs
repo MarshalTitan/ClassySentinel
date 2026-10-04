@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace ClassySentinel;
 
 [Serializable]
@@ -16,6 +18,12 @@ public sealed class GearsetReference : IEquatable<GearsetReference>
             ClassJobId = gearset.ClassJobId,
             GearsetName = gearset.GearsetName,
         };
+
+    public static bool IsValidSavedReference([NotNullWhen(true)] GearsetReference? reference)
+        => reference is not null
+           && reference.GearsetId >= 0
+           && reference.ClassJobId != 0
+           && !string.IsNullOrWhiteSpace(reference.GearsetName);
 
     public bool Matches(GearsetInfo gearset)
         => GearsetId == gearset.GearsetId

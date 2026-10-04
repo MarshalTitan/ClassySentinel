@@ -50,10 +50,60 @@ public sealed class Configuration : IPluginConfiguration
         => !CategoryVisibility.TryGetValue(category.ToString(), out var visible) || visible;
 
     public bool IsDefaultGearsetVisible(GearsetInfo gearset)
-        => !HiddenDefaultGearsets.Any(saved => saved.Matches(gearset));
+        => !HiddenDefaultGearsets.Any(
+            saved => GearsetReference.IsValidSavedReference(saved) && saved.Matches(gearset));
 
     public bool IsAdditionalGearsetVisible(GearsetInfo gearset)
-        => AdditionalGearsets.Any(saved => saved.Matches(gearset));
+        => AdditionalGearsets.Any(
+            saved => GearsetReference.IsValidSavedReference(saved) && saved.Matches(gearset));
+
+    public bool TryRepairSavedGearsetReferences()
+    {
+        var changed = false;
+
+        if (DefaultGearsetEntries is null)
+        {
+            DefaultGearsetEntries = new Dictionary<uint, GearsetReference>();
+            changed = true;
+        }
+        else
+        {
+            var invalidDefaultKeys = DefaultGearsetEntries
+                .Where(saved => saved.Key == 0
+                                || !GearsetReference.IsValidSavedReference(saved.Value)
+                                || saved.Value.ClassJobId != saved.Key)
+                .Select(saved => saved.Key)
+                .ToArray();
+            foreach (var key in invalidDefaultKeys)
+                DefaultGearsetEntries.Remove(key);
+
+            changed |= invalidDefaultKeys.Length > 0;
+        }
+
+        if (AdditionalGearsets is null)
+        {
+            AdditionalGearsets = new List<GearsetReference>();
+            changed = true;
+        }
+        else
+        {
+            changed |= AdditionalGearsets.RemoveAll(
+                saved => !GearsetReference.IsValidSavedReference(saved)) > 0;
+        }
+
+        if (HiddenDefaultGearsets is null)
+        {
+            HiddenDefaultGearsets = new List<GearsetReference>();
+            changed = true;
+        }
+        else
+        {
+            changed |= HiddenDefaultGearsets.RemoveAll(
+                saved => !GearsetReference.IsValidSavedReference(saved)) > 0;
+        }
+
+        return changed;
+    }
 
     public bool TryMigrateGearsetReferences(IReadOnlyList<GearsetInfo> discoveredGearsets)
     {
