@@ -27,6 +27,10 @@ public sealed class SettingsWindow : Window
         drawModernContent = DrawModernPage;
         Size = new Vector2(900, 720);
         SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(620, 520),
+        };
     }
 
     public override void PreDraw()
