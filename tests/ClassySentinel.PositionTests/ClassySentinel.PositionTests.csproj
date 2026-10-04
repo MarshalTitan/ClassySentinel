@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../PanelPositionPolicy.cs" Link="PanelPositionPolicy.cs" />
+    <Compile Include="../../ThemeMigrationPolicy.cs" Link="ThemeMigrationPolicy.cs" />
   </ItemGroup>
 </Project>

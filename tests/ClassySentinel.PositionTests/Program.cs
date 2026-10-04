@@ -51,6 +51,30 @@ var tests = new (string Name, Action Run)[]
             new Vector2(100f, 50f),
             new Vector2(800f, 600f),
             new Vector2(1200f, 900f)))),
+    ("migrates existing users explicitly to Classic", () => AssertThemeMigration(
+        initialVersion: 4,
+        initialTheme: ThemeMigrationPolicy.Classic,
+        expectedChanged: true,
+        expectedVersion: 5,
+        expectedTheme: ThemeMigrationPolicy.Classic)),
+    ("defers theme migration until legacy gear sets migrate", () => AssertThemeMigration(
+        initialVersion: 3,
+        initialTheme: ThemeMigrationPolicy.Modern,
+        expectedChanged: false,
+        expectedVersion: 3,
+        expectedTheme: ThemeMigrationPolicy.Modern)),
+    ("preserves an explicit Modern selection", () => AssertThemeMigration(
+        initialVersion: 5,
+        initialTheme: ThemeMigrationPolicy.Modern,
+        expectedChanged: false,
+        expectedVersion: 5,
+        expectedTheme: ThemeMigrationPolicy.Modern)),
+    ("normalizes an invalid theme to Classic", () => AssertThemeMigration(
+        initialVersion: 5,
+        initialTheme: 99,
+        expectedChanged: true,
+        expectedVersion: 5,
+        expectedTheme: ThemeMigrationPolicy.Classic)),
 };
 
 foreach (var test in tests)
@@ -59,10 +83,28 @@ foreach (var test in tests)
     Console.WriteLine($"PASS: {test.Name}");
 }
 
-Console.WriteLine($"{tests.Length} panel-position regression tests passed.");
+Console.WriteLine($"{tests.Length} regression tests passed.");
 
 static void AssertPosition(Vector2 expected, Vector2 actual)
 {
     if (Vector2.DistanceSquared(expected, actual) >= 0.0001f)
         throw new InvalidOperationException($"Expected {expected}, received {actual}.");
+}
+
+static void AssertThemeMigration(
+    int initialVersion,
+    int initialTheme,
+    bool expectedChanged,
+    int expectedVersion,
+    int expectedTheme)
+{
+    var version = initialVersion;
+    var theme = initialTheme;
+    var changed = ThemeMigrationPolicy.Apply(ref version, ref theme);
+    if (changed != expectedChanged || version != expectedVersion || theme != expectedTheme)
+    {
+        throw new InvalidOperationException(
+            $"Expected changed={expectedChanged}, version={expectedVersion}, theme={expectedTheme}; " +
+            $"received changed={changed}, version={version}, theme={theme}.");
+    }
 }

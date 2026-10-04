@@ -5,7 +5,11 @@ namespace ClassySentinel;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = ThemeMigrationPolicy.CurrentConfigurationVersion;
+
+    // Persisted as an integer so an invalid or future value can be normalized
+    // safely without preventing the rest of the configuration from loading.
+    public int Theme { get; set; } = ThemeMigrationPolicy.Classic;
 
     // Retained only so version 3 configurations deserialize cleanly. Panel
     // visibility is now temporary runtime state and is never restored on load.
@@ -85,6 +89,18 @@ public sealed class Configuration : IPluginConfiguration
         HiddenClassJobIds.Clear();
         Visible = false;
         Version = 4;
+        return true;
+    }
+
+    public bool TryMigrateTheme()
+    {
+        var version = Version;
+        var theme = Theme;
+        if (!ThemeMigrationPolicy.Apply(ref version, ref theme))
+            return false;
+
+        Version = version;
+        Theme = theme;
         return true;
     }
 

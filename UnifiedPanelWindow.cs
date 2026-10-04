@@ -3,28 +3,17 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using SentinelCore.UI;
 
 namespace ClassySentinel;
 
 public sealed class UnifiedPanelWindow : Window
 {
-    private const int StyleColorCount = 2;
-    private const int StyleVarCount = 3;
-
-    private static readonly Vector4 PanelBackground = new(0.026f, 0.031f, 0.040f, 0.95f);
-    private static readonly Vector4 PanelBorder = new(0.58f, 0.47f, 0.27f, 0.92f);
-    private static readonly Vector4 ButtonIdle = new(0.075f, 0.09f, 0.115f, 0.98f);
-    private static readonly Vector4 ButtonHover = new(0.23f, 0.29f, 0.37f, 1f);
-    private static readonly Vector4 ButtonActive = new(0.40f, 0.32f, 0.16f, 1f);
-    private static readonly Vector4 CurrentIdle = new(0.43f, 0.32f, 0.10f, 1f);
-    private static readonly Vector4 CurrentHover = new(0.68f, 0.52f, 0.18f, 1f);
-    private static readonly Vector4 HeaderGold = new(0.92f, 0.78f, 0.44f, 1f);
-    private static readonly Vector4 ControllerBlue = new(0.20f, 0.78f, 0.96f, 1f);
-    private static readonly Vector4 ControllerGlow = new(0.35f, 0.88f, 1f, 0.48f);
-    private static readonly Vector4 ControllerLabelText = new(0.94f, 0.98f, 1f, 1f);
     private static readonly Vector2 MinimumReachableArea = new(48f, 32f);
 
     private readonly Plugin plugin;
+    private readonly SentinelModernStyleScope modernStyle = new();
+    private SentinelStyleScope? classicStyle;
     private bool forcePositionOnce = true;
 
     public UnifiedPanelWindow(Plugin plugin)
@@ -70,11 +59,10 @@ public sealed class UnifiedPanelWindow : Window
         }
 
         var scale = GetScale();
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, PanelBackground);
-        ImGui.PushStyleColor(ImGuiCol.Border, PanelBorder);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1f * scale);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 8f * scale);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f, 9f) * scale);
+        if (IsModern)
+            modernStyle.Push(scale);
+        else
+            classicStyle = SentinelStyleScope.PushWindow(scale);
     }
 
     public override void Draw()
@@ -131,8 +119,9 @@ public sealed class UnifiedPanelWindow : Window
             PositionCondition = ImGuiCond.FirstUseEver;
         }
 
-        ImGui.PopStyleVar(StyleVarCount);
-        ImGui.PopStyleColor(StyleColorCount);
+        modernStyle.Pop();
+        classicStyle?.Dispose();
+        classicStyle = null;
     }
 
     public IReadOnlyList<NavigationRow> BuildNavigationRows()
@@ -170,11 +159,11 @@ public sealed class UnifiedPanelWindow : Window
 
     private void DrawPanelHeader()
     {
-        ImGui.TextColored(HeaderGold, "CLASSY SENTINEL");
+        ImGui.TextColored(ThemeHeader, "CLASSY SENTINEL");
         if (plugin.Controller.IsActive)
         {
             ImGui.SameLine();
-            ImGui.TextColored(ControllerBlue, "R3 SELECT");
+            ImGui.TextColored(ThemeController, "R3 SELECT");
         }
 
         ImGui.Separator();
@@ -194,9 +183,9 @@ public sealed class UnifiedPanelWindow : Window
                                   && reference.Equals(plugin.Controller.SelectedGearset);
         var size = new Vector2(plugin.Configuration.ButtonSize) * GetScale();
         var palette = GetRolePalette(gearset.RoleHue);
-        var idle = isCurrent ? Blend(palette.Idle, CurrentIdle, 0.25f) : palette.Idle;
-        var hover = isCurrent ? Blend(palette.Hover, CurrentHover, 0.25f) : palette.Hover;
-        var border = isControllerFocused ? ControllerBlue : isCurrent ? HeaderGold : palette.Border;
+        var idle = isCurrent ? Blend(palette.Idle, ThemeCurrent, 0.25f) : palette.Idle;
+        var hover = isCurrent ? Blend(palette.Hover, ThemeCurrent, 0.25f) : palette.Hover;
+        var border = isControllerFocused ? ThemeController : isCurrent ? ThemeHeader : palette.Border;
         var borderSize = isControllerFocused ? 3f : isCurrent ? 2f : 1f;
 
         ImGui.PushID($"gearset-{reference.ImGuiId}");
@@ -254,7 +243,7 @@ public sealed class UnifiedPanelWindow : Window
         if (!ImGui.BeginPopupContextItem("gearsets"))
             return;
 
-        ImGui.TextColored(HeaderGold, $"{gearset.JobName} ({gearset.JobAbbreviation})");
+        ImGui.TextColored(ThemeHeader, $"{gearset.JobName} ({gearset.JobAbbreviation})");
         ImGui.Text($"Gear Set: {gearset.GearsetName}");
         ImGui.TextDisabled($"Gear Set #{gearset.GearsetId + 1}");
         ImGui.Separator();
@@ -287,8 +276,8 @@ public sealed class UnifiedPanelWindow : Window
         var badgeMin = new Vector2(itemMax.X - badgeSize.X - (2f * scale), itemMax.Y - badgeSize.Y - (2f * scale));
         var badgeMax = badgeMin + badgeSize;
         var drawList = ImGui.GetWindowDrawList();
-        drawList.AddRectFilled(badgeMin, badgeMax, ImGui.ColorConvertFloat4ToU32(PanelBackground), 3f * scale);
-        drawList.AddText(badgeMin + padding, ImGui.ColorConvertFloat4ToU32(HeaderGold), badge);
+        drawList.AddRectFilled(badgeMin, badgeMax, ImGui.ColorConvertFloat4ToU32(ThemePanelBackground), 3f * scale);
+        drawList.AddText(badgeMin + padding, ImGui.ColorConvertFloat4ToU32(ThemeHeader), badge);
     }
 
     private void DrawControllerFocusOverlay(Vector2 itemMin, Vector2 itemMax)
@@ -298,7 +287,7 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.GetWindowDrawList().AddRect(
             itemMin - expansion,
             itemMax + expansion,
-            ImGui.ColorConvertFloat4ToU32(ControllerGlow),
+            ImGui.ColorConvertFloat4ToU32(ThemeControllerGlow),
             6f * scale,
             ImDrawFlags.None,
             2f * scale);
@@ -311,7 +300,7 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.GetWindowDrawList().AddRect(
             itemMin + inset,
             itemMax - inset,
-            ImGui.ColorConvertFloat4ToU32(HeaderGold),
+            ImGui.ColorConvertFloat4ToU32(ThemeHeader),
             3.5f * scale,
             ImDrawFlags.None,
             1f * scale);
@@ -338,9 +327,9 @@ public sealed class UnifiedPanelWindow : Window
 
         var labelMax = labelMin + labelSize;
         var drawList = ImGui.GetForegroundDrawList();
-        drawList.AddRectFilled(labelMin, labelMax, ImGui.ColorConvertFloat4ToU32(PanelBackground), 5f * scale);
-        drawList.AddRect(labelMin, labelMax, ImGui.ColorConvertFloat4ToU32(ControllerBlue), 5f * scale);
-        drawList.AddText(labelMin + padding, ImGui.ColorConvertFloat4ToU32(ControllerLabelText), gearset.GearsetName);
+        drawList.AddRectFilled(labelMin, labelMax, ImGui.ColorConvertFloat4ToU32(ThemePanelBackground), 5f * scale);
+        drawList.AddRect(labelMin, labelMax, ImGui.ColorConvertFloat4ToU32(ThemeController), 5f * scale);
+        drawList.AddText(labelMin + padding, ImGui.ColorConvertFloat4ToU32(ThemeText), gearset.GearsetName);
     }
 
     private void DrawControllerFooter()
@@ -348,23 +337,23 @@ public sealed class UnifiedPanelWindow : Window
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
-        ImGui.TextColored(ControllerBlue, "R3 MODE  |  X EQUIP");
+        ImGui.TextColored(ThemeController, "R3 MODE  |  X EQUIP");
     }
 
-    private static void DrawTooltip(GearsetInfo gearset, bool isDefault, bool isCurrent, bool isControllerFocused)
+    private void DrawTooltip(GearsetInfo gearset, bool isDefault, bool isCurrent, bool isControllerFocused)
     {
         ImGui.BeginTooltip();
-        ImGui.TextColored(HeaderGold, $"{gearset.JobName} ({gearset.JobAbbreviation})");
+        ImGui.TextColored(ThemeHeader, $"{gearset.JobName} ({gearset.JobAbbreviation})");
         ImGui.Text($"Gear Set: {gearset.GearsetName}");
         ImGui.TextDisabled($"Gear Set #{gearset.GearsetId + 1}");
         if (gearset.ItemLevel > 0)
             ImGui.TextDisabled($"Item level {gearset.ItemLevel}");
         if (isDefault)
-            ImGui.TextColored(HeaderGold, "Default gear set");
+            ImGui.TextColored(ThemeHeader, "Default gear set");
         if (isCurrent)
-            ImGui.TextColored(HeaderGold, "Currently equipped gear set");
+            ImGui.TextColored(ThemeHeader, "Currently equipped gear set");
         if (isControllerFocused)
-            ImGui.TextColored(ControllerBlue, "Controller selection");
+            ImGui.TextColored(ThemeController, "Controller selection");
         ImGui.TextDisabled("Right-click for gear-set options.");
         ImGui.EndTooltip();
     }
@@ -405,6 +394,26 @@ public sealed class UnifiedPanelWindow : Window
     private float GetScale()
         => ImGuiHelpers.GlobalScale * Math.Clamp(plugin.Configuration.PanelScale, 0.6f, 1.6f);
 
+    private bool IsModern
+        => plugin.Configuration.Theme == (int)SentinelThemeKind.Modern;
+
+    private Vector4 ThemePanelBackground
+        => IsModern ? SentinelModernPalette.Canvas : SentinelPalette.WindowBackground;
+
+    private Vector4 ThemeHeader
+        => IsModern ? SentinelModernPalette.AccentStrong : SentinelPalette.HeaderGold;
+
+    private Vector4 ThemeController
+        => IsModern ? SentinelModernPalette.Accent : SentinelPalette.AccentBlue;
+
+    private Vector4 ThemeControllerGlow => WithAlpha(ThemeController, 0.48f);
+
+    private Vector4 ThemeCurrent
+        => IsModern ? SentinelModernPalette.Teal : SentinelPalette.HeaderGold;
+
+    private Vector4 ThemeText
+        => IsModern ? SentinelModernPalette.Text : SentinelPalette.Text;
+
     private static RoleHue GetCategoryRoleHue(JobCategory category) => category switch
     {
         JobCategory.Tank => RoleHue.Tank,
@@ -415,7 +424,7 @@ public sealed class UnifiedPanelWindow : Window
         _ => RoleHue.Neutral,
     };
 
-    private static RolePalette GetRolePalette(RoleHue roleHue) => roleHue switch
+    private RolePalette GetRolePalette(RoleHue roleHue) => roleHue switch
     {
         RoleHue.Tank => new(
             new Vector4(0.045f, 0.090f, 0.155f, 0.98f),
@@ -447,11 +456,30 @@ public sealed class UnifiedPanelWindow : Window
             new Vector4(0.315f, 0.150f, 0.440f, 1f),
             new Vector4(0.57f, 0.32f, 0.73f, 0.90f),
             new Vector4(0.75f, 0.50f, 0.91f, 1f)),
-        _ => new RolePalette(ButtonIdle, ButtonHover, ButtonActive, PanelBorder, HeaderGold),
+        _ => GetNeutralPalette(),
     };
+
+    private RolePalette GetNeutralPalette()
+    {
+        if (IsModern)
+        {
+            return new RolePalette(
+                SentinelModernPalette.SurfaceRaised,
+                SentinelModernPalette.SurfaceHover,
+                SentinelModernPalette.SurfaceActive,
+                SentinelModernPalette.Border,
+                SentinelModernPalette.AccentStrong);
+        }
+
+        var palette = SentinelPalette.ForRole(SentinelCore.Jobs.RoleHue.Neutral);
+        return new RolePalette(palette.Idle, palette.Hover, palette.Active, palette.Border, palette.Header);
+    }
 
     private static Vector4 Blend(Vector4 first, Vector4 second, float amount)
         => Vector4.Lerp(first, second, Math.Clamp(amount, 0f, 1f));
+
+    private static Vector4 WithAlpha(Vector4 colour, float alpha)
+        => new(colour.X, colour.Y, colour.Z, alpha);
 
     private readonly record struct RolePalette(
         Vector4 Idle,

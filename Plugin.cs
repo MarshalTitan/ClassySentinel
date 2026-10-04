@@ -171,6 +171,7 @@ public sealed class Plugin : IDalamudPlugin
     private void MaintainGearsetReferences()
     {
         var changed = Configuration.TryMigrateGearsetReferences(Gearsets.Gearsets);
+        changed |= Configuration.TryMigrateTheme();
         changed |= Configuration.EnsureAutomaticDefaults(Gearsets.Gearsets);
         if (changed)
             SaveConfiguration();

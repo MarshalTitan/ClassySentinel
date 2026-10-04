@@ -26,7 +26,7 @@ jobs:
           Invoke-WebRequest -Uri 'https://goatcorp.github.io/dalamud-distrib/latest.zip' -OutFile $archive
           Expand-Archive -LiteralPath $archive -DestinationPath $dalamudDir -Force
 
-      - name: Run panel-position regression tests
+      - name: Run regression tests
         run: dotnet run --project tests/ClassySentinel.PositionTests/ClassySentinel.PositionTests.csproj -c Release
 
       - run: dotnet restore ClassySentinel.csproj --locked-mode
