@@ -115,10 +115,10 @@ public sealed class SettingsWindow : Window
             themeState.SelectPage(SettingsPage.Gearsets);
 
         ImGui.Spacing();
-        SentinelModernNavigation.GroupLabel("THEME");
-        if (SentinelModernNavigation.Item("theme-classic", "Classic", false, scale))
+        ImGui.Separator();
+        SentinelModernNavigation.GroupLabel("SENTINEL MODERN PREVIEW");
+        if (ImGui.Button("Use Classic theme", new Vector2(-1f, 0f)))
             SelectTheme(SentinelThemeKind.Classic);
-        SentinelModernNavigation.Item("theme-modern", "Sentinel Modern", true, scale);
     }
 
     private void DrawModernPage()
@@ -126,10 +126,6 @@ public sealed class SettingsWindow : Window
         switch (themeState.SelectedPage)
         {
             case SettingsPage.General:
-                SentinelModernUi.PageHeading(
-                    "General",
-                    "Open the launcher and review the controls used to choose an exact saved gear set.");
-                ImGui.Spacing();
                 using (var card = SentinelModernCard.Begin("##GeneralCard"))
                 {
                     if (card.IsVisible)
@@ -144,10 +140,6 @@ public sealed class SettingsWindow : Window
                 break;
 
             case SettingsPage.Appearance:
-                SentinelModernUi.PageHeading(
-                    "Appearance",
-                    "Adjust the launcher without changing its saved position or interaction model.");
-                ImGui.Spacing();
                 using (var card = SentinelModernCard.Begin("##AppearanceCard"))
                 {
                     if (card.IsVisible)
@@ -156,10 +148,6 @@ public sealed class SettingsWindow : Window
                 break;
 
             case SettingsPage.Gearsets:
-                SentinelModernUi.PageHeading(
-                    "Gear sets",
-                    "Choose which categories and exact saved gear sets appear in the launcher.");
-                ImGui.Spacing();
                 using (var card = SentinelModernCard.Begin("##GearsetsCard"))
                 {
                     if (card.IsVisible)
