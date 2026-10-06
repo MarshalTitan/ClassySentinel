@@ -1,0 +1,5 @@
+{
+  "version": "0.8.6.0",
+  "source": "ec17976ce474776d26844e0656c84c8519aeb586",
+  "reason": "Publish the Sentinel Modern compact-header minimization fix."
+}
