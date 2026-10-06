@@ -70,6 +70,7 @@ var tests = new (string Name, Action Run)[]
         expectedChanged: false,
         expectedVersion: 5,
         expectedTheme: ThemeMigrationPolicy.Modern)),
+    ("persists the Modern compact-header state and restore size", AssertModernWindowStatePersists),
     ("normalizes an invalid theme to Classic", () => AssertThemeMigration(
         initialVersion: 5,
         initialTheme: 99,
@@ -113,6 +114,27 @@ static void AssertThemeMigration(
         throw new InvalidOperationException(
             $"Expected changed={expectedChanged}, version={expectedVersion}, theme={expectedTheme}; " +
             $"received changed={changed}, version={version}, theme={theme}.");
+    }
+}
+
+static void AssertModernWindowStatePersists()
+{
+    var configuration = new Configuration
+    {
+        Theme = ThemeMigrationPolicy.Modern,
+        ModernWindowCollapsed = true,
+        ModernExpandedWidth = 930f,
+        ModernExpandedHeight = 740f,
+    };
+
+    var json = JsonSerializer.Serialize(configuration);
+    var reloaded = JsonSerializer.Deserialize<Configuration>(json)
+                   ?? throw new InvalidOperationException("Modern window state did not deserialize.");
+    if (!reloaded.ModernWindowCollapsed
+        || reloaded.ModernExpandedWidth != 930f
+        || reloaded.ModernExpandedHeight != 740f)
+    {
+        throw new InvalidOperationException("Modern compact-header state or restore size did not persist.");
     }
 }
 
