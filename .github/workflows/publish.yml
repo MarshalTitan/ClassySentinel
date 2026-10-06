@@ -92,3 +92,61 @@ jobs:
             git commit -m "Publish beta v${{ steps.version.outputs.value }} [skip ci]"
             git push origin HEAD:main
           }
+
+      - name: Trigger central Sentinel catalog reconciliation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw 'DALAMUD_CATALOG_TOKEN is required to publish Classy Sentinel to the central Sentinel catalog.'
+          }
+
+          $payload = @{
+            event_type = 'plugin-released'
+            client_payload = @{
+              source_repository = '${{ github.repository }}'
+              source_commit = '${{ github.sha }}'
+              internal_name = 'ClassySentinel'
+              version = '${{ steps.version.outputs.value }}'
+              tag = '${{ steps.version.outputs.tag }}'
+            }
+          } | ConvertTo-Json -Depth 5
+
+          $payload | gh api `
+            --method POST `
+            'repos/MarshalTitan/Sentinel/dispatches' `
+            --input -
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to dispatch the central Sentinel catalog reconciliation.'
+          }
+
+      - name: Verify public central Sentinel catalog
+        shell: pwsh
+        run: |
+          $catalogUrl = 'https://raw.githubusercontent.com/MarshalTitan/Sentinel/main/repo.json'
+          $expectedVersion = '${{ steps.version.outputs.value }}'
+          $expectedAsset = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ClassySentinel.zip"
+
+          for ($attempt = 1; $attempt -le 60; $attempt++) {
+            try {
+              $catalog = @(Invoke-RestMethod -Uri "$catalogUrl`?release=${{ github.run_id }}-$attempt")
+              $entry = @($catalog | Where-Object InternalName -eq 'ClassySentinel')
+              if ($entry.Count -eq 1 `
+                  -and $entry[0].AssemblyVersion -eq $expectedVersion `
+                  -and $entry[0].TestingAssemblyVersion -eq $expectedVersion `
+                  -and $entry[0].DownloadLinkInstall -eq $expectedAsset `
+                  -and $entry[0].DownloadLinkUpdate -eq $expectedAsset `
+                  -and $entry[0].DownloadLinkTesting -eq $expectedAsset) {
+                Write-Host "Verified Classy Sentinel $expectedVersion in the public central catalog."
+                exit 0
+              }
+            }
+            catch {
+              Write-Host "Central catalog verification attempt $attempt failed: $($_.Exception.Message)"
+            }
+
+            Start-Sleep -Seconds 5
+          }
+
+          throw "The public central Sentinel catalog did not reach Classy Sentinel $expectedVersion within five minutes."
