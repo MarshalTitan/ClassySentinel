@@ -29,6 +29,10 @@ jobs:
       - name: Run regression tests
         run: dotnet run --project tests/ClassySentinel.PositionTests/ClassySentinel.PositionTests.csproj -c Release
 
+      - name: Verify Sentinel Core pin and UI package hash
+        shell: pwsh
+        run: ./.github/scripts/Verify-SentinelCore.ps1
+
       - run: dotnet restore ClassySentinel.csproj --locked-mode
       - run: dotnet build ClassySentinel.csproj -c Release --no-restore
 

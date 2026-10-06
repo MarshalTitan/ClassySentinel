@@ -1,20 +1,52 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using SentinelCore.UI;
 
 namespace ClassySentinel;
 
-public sealed class SettingsWindow : Window
+public sealed class SettingsWindow : Window, IDisposable
 {
+    private static readonly Vector2 ClassicMinimumWindowSize = new(620f, 520f);
+    private static readonly SentinelModernNavItem[] ModernPrimaryNavigation =
+    [
+        new("general", null, "General")
+        {
+            DrawIcon = static context => DrawModernNavigationIcon(FontAwesomeIcon.Cog, context),
+        },
+        new("appearance", null, "Appearance")
+        {
+            DrawIcon = static context => DrawModernNavigationIcon(FontAwesomeIcon.Palette, context),
+        },
+        new("gearsets", null, "Gear sets")
+        {
+            DrawIcon = static context => DrawModernNavigationIcon(FontAwesomeIcon.Tools, context),
+        },
+    ];
+
     private readonly Plugin plugin;
     private readonly SentinelThemeState<SettingsPage> themeState;
     private readonly SentinelModernStyleScope modernStyle = new();
-    private readonly Action drawModernNavigation;
-    private readonly Action drawModernContent;
+    private readonly SentinelModernAppShellState modernShellState = new();
+    private readonly Action<string> selectModernPage;
+    private readonly Action drawModernPage;
+    private readonly Action drawModernActionDock;
+    private readonly Action requestModernCollapse;
+    private readonly Action requestModernClose;
+    private readonly Action<SentinelModernIconDrawContext> drawModernPluginIcon;
+    private readonly Action drawModernLauncherControl;
+    private readonly Action drawModernButtonSizeControl;
+    private readonly Action drawModernPanelScaleControl;
+    private readonly Action drawModernButtonsPerRowControl;
+    private readonly Action drawModernResetPositionControl;
+    private readonly ImGuiWindowFlags classicWindowFlags;
     private SentinelStyleScope? classicStyle;
     private bool modernChanged;
+    private bool modernThemeActive;
+    private bool expandOnNextDraw;
+    private bool disposed;
 
     public SettingsWindow(Plugin plugin)
         : base("Classy Sentinel Settings##ClassySentinel-Settings")
@@ -23,29 +55,64 @@ public sealed class SettingsWindow : Window
         themeState = new SentinelThemeState<SettingsPage>(
             SettingsPage.General,
             SentinelThemeState<SettingsPage>.NormalizeTheme(plugin.Configuration.Theme));
-        drawModernNavigation = DrawModernNavigation;
-        drawModernContent = DrawModernPage;
+        selectModernPage = SelectModernPage;
+        drawModernPage = DrawModernPage;
+        drawModernActionDock = DrawModernActionDock;
+        requestModernCollapse = RequestModernCollapse;
+        requestModernClose = RequestModernClose;
+        drawModernPluginIcon = DrawModernPluginIcon;
+        drawModernLauncherControl = DrawModernLauncherControl;
+        drawModernButtonSizeControl = DrawModernButtonSizeControl;
+        drawModernPanelScaleControl = DrawModernPanelScaleControl;
+        drawModernButtonsPerRowControl = DrawModernButtonsPerRowControl;
+        drawModernResetPositionControl = DrawModernResetPositionControl;
+        classicWindowFlags = Flags;
         Size = new Vector2(900, 720);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(620, 520),
+            MinimumSize = ClassicMinimumWindowSize,
         };
     }
 
     public override void PreDraw()
     {
+        classicStyle?.Dispose();
+        classicStyle = null;
+        modernStyle.Pop();
+        modernThemeActive = themeState.IsModern;
+        if (expandOnNextDraw)
+        {
+            ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always);
+            expandOnNextDraw = false;
+        }
+
         var scale = ImGuiHelpers.GlobalScale;
-        if (themeState.IsModern)
-            modernStyle.Push(scale);
+        if (modernThemeActive)
+        {
+            Flags = SentinelModernWindowChrome.UseCustomHeader(classicWindowFlags);
+            modernStyle.PushAppShell(scale);
+            var shellMinimum = SentinelModernAppLayout.MinimumWindowSize(
+                scale,
+                hasSecondarySidebar: false,
+                hasActionDock: true);
+            SizeConstraints = new WindowSizeConstraints
+            {
+                MinimumSize = Vector2.Max(ClassicMinimumWindowSize, shellMinimum),
+            };
+        }
         else
+        {
+            Flags = classicWindowFlags;
             classicStyle = SentinelStyleScope.PushWindow(scale);
+            SizeConstraints = new WindowSizeConstraints { MinimumSize = ClassicMinimumWindowSize };
+        }
     }
 
     public override void Draw()
     {
         var changed = false;
-        if (themeState.IsModern)
+        if (modernThemeActive)
             changed |= DrawModern();
         else
             DrawClassic(ref changed);
@@ -59,6 +126,24 @@ public sealed class SettingsWindow : Window
         modernStyle.Pop();
         classicStyle?.Dispose();
         classicStyle = null;
+    }
+
+    public void OpenAndExpand()
+    {
+        IsOpen = true;
+        expandOnNextDraw = true;
+    }
+
+    public void Dispose()
+    {
+        if (disposed)
+            return;
+
+        modernStyle.Dispose();
+        modernShellState.Dispose();
+        classicStyle?.Dispose();
+        classicStyle = null;
+        disposed = true;
     }
 
     private void DrawClassic(ref bool changed)
@@ -83,82 +168,74 @@ public sealed class SettingsWindow : Window
     {
         modernChanged = false;
         var panelVisible = plugin.ManualPanelOpen || plugin.Controller.IsActive;
-        var options = new SentinelModernShellOptions(
-            "ClassySentinel.ModernSettings",
-            "SENTINEL",
+        var options = new SentinelModernAppShellOptions(
+            "ClassySentinel.Modern2",
             "Classy Sentinel",
-            "Fast, exact gear-set selection for mouse, keyboard, and controller.")
+            GetModernPageId(themeState.SelectedPage))
         {
-            ContextLabel = "Configuration",
-            Status = new SentinelModernStatus(
+            DrawPluginIcon = drawModernPluginIcon,
+            ContextLabel = GetModernPageLabel(themeState.SelectedPage),
+            Status = new SentinelModernStatusPillOptions(
                 panelVisible ? "LAUNCHER OPEN" : "READY",
-                panelVisible ? SentinelModernStatusTone.Accent : SentinelModernStatusTone.Success),
+                panelVisible ? SentinelModernPillTone.Accent : SentinelModernPillTone.Ready),
             Scale = ImGuiHelpers.GlobalScale,
+            DeltaTime = ImGui.GetIO().DeltaTime,
+            ReducedMotion = Plugin.PluginInterface.UiBuilder.ShouldUseReducedMotion,
+            AmbientIntensity = 0.9f,
+            SurfaceStyle = SentinelModernAppSurfaceStyle.Unified,
+            EnableWindowDragging = true,
+            RequestCollapse = requestModernCollapse,
+            RequestClose = requestModernClose,
         };
 
-        SentinelModernConfigurationShell.Draw(
+        SentinelModernAppShell.Draw(
             options,
-            drawModernNavigation,
-            drawModernContent);
+            modernShellState,
+            ModernPrimaryNavigation,
+            selectModernPage,
+            drawModernPage,
+            drawActionDock: drawModernActionDock);
         return modernChanged;
-    }
-
-    private void DrawModernNavigation()
-    {
-        var scale = ImGuiHelpers.GlobalScale;
-        SentinelModernNavigation.GroupLabel("SETTINGS");
-        if (SentinelModernNavigation.Item("general", "General", themeState.SelectedPage == SettingsPage.General, scale))
-            themeState.SelectPage(SettingsPage.General);
-        if (SentinelModernNavigation.Item("appearance", "Appearance", themeState.SelectedPage == SettingsPage.Appearance, scale))
-            themeState.SelectPage(SettingsPage.Appearance);
-        if (SentinelModernNavigation.Item("gearsets", "Gear sets", themeState.SelectedPage == SettingsPage.Gearsets, scale))
-            themeState.SelectPage(SettingsPage.Gearsets);
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        SentinelModernNavigation.GroupLabel("SENTINEL MODERN PREVIEW");
-        if (ImGui.Button("Use Classic theme", new Vector2(-1f, 0f)))
-            SelectTheme(SentinelThemeKind.Classic);
     }
 
     private void DrawModernPage()
     {
+        var scale = ImGuiHelpers.GlobalScale;
         switch (themeState.SelectedPage)
         {
             case SettingsPage.General:
-                using (var card = SentinelModernCard.Begin("##GeneralCard"))
-                {
-                    if (card.IsVisible)
-                    {
-                        DrawLauncherControl();
-                        DrawControllerHelp(modern: true);
-                        ImGui.Spacing();
-                        ImGui.TextDisabled("Every launcher tile equips the exact gear set named in its tooltip.");
-                        ImGui.TextDisabled("Duplicate job icons receive a gear-set number badge.");
-                    }
-                }
+                SentinelModernSettingsRow.Draw(
+                    "ClassySentinel.Launcher",
+                    "Quick launcher",
+                    "Open or close the compact gear-set launcher without changing its saved position.",
+                    drawModernLauncherControl,
+                    scale: scale);
+                DrawControllerHelp(modern: true);
                 break;
 
             case SettingsPage.Appearance:
-                using (var card = SentinelModernCard.Begin("##AppearanceCard"))
-                {
-                    if (card.IsVisible)
-                        DrawPositionAndAppearance(ref modernChanged, modern: true);
-                }
+                DrawPositionAndAppearance(ref modernChanged, modern: true);
                 break;
 
             case SettingsPage.Gearsets:
-                using (var card = SentinelModernCard.Begin("##GearsetsCard"))
-                {
-                    if (card.IsVisible)
-                    {
-                        DrawCategoryVisibility(ref modernChanged, modern: true);
-                        DrawGearsetVisibility(ref modernChanged, modern: true);
-                        DrawMaintenanceActions(modern: true);
-                    }
-                }
+                DrawCategoryVisibility(ref modernChanged, modern: true);
+                DrawGearsetVisibility(ref modernChanged, modern: true);
+                DrawMaintenanceActions(modern: true);
                 break;
         }
+    }
+
+    private void DrawModernActionDock()
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        SentinelModernActionDock.Status("Sentinel Modern 2 is active");
+        ImGui.SameLine();
+        if (SentinelModernActionDock.PrimaryButton(
+                "ClassySentinel.SwitchToClassic",
+                "Switch to Classic",
+                new Vector2(180f * scale, 0f),
+                scale))
+            SelectTheme(SentinelThemeKind.Classic);
     }
 
     private void DrawLauncherControl()
@@ -170,8 +247,23 @@ public sealed class SettingsWindow : Window
         ImGui.TextDisabled("Hidden by default during gameplay.");
     }
 
+    private void DrawModernLauncherControl()
+    {
+        var panelVisible = plugin.ManualPanelOpen || plugin.Controller.IsActive;
+        if (ImGui.Button(
+                panelVisible ? "Close launcher" : "Open launcher",
+                new Vector2(-1f, 0f)))
+            plugin.SetManualPanelOpen(!panelVisible);
+    }
+
     private void DrawPositionAndAppearance(ref bool changed, bool modern)
     {
+        if (modern)
+        {
+            DrawModernPositionAndAppearance(ref changed);
+            return;
+        }
+
         DrawSection("Panel", modern);
 
         var locked = plugin.Configuration.Locked;
@@ -226,6 +318,100 @@ public sealed class SettingsWindow : Window
         }
         ImGui.SameLine();
         ImGui.TextDisabled("Other settings are preserved.");
+    }
+
+    private void DrawModernPositionAndAppearance(ref bool changed)
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        SentinelModernUi.SectionHeader("Panel");
+
+        var locked = plugin.Configuration.Locked;
+        if (DrawBoolean("locked", "Lock panel position", ref locked, modern: true))
+        {
+            plugin.Configuration.Locked = locked;
+            changed = true;
+        }
+
+        var clickThrough = plugin.Configuration.ClickThroughWhenLocked;
+        if (DrawBoolean(
+                "click-through",
+                "Click through panel while locked",
+                ref clickThrough,
+                modern: true))
+        {
+            plugin.Configuration.ClickThroughWhenLocked = clickThrough;
+            changed = true;
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("This disables mouse interaction while locked. The temporary R3 launcher still works.");
+
+        var headers = plugin.Configuration.ShowCategoryHeaders;
+        if (DrawBoolean("headers", "Show category headers", ref headers, modern: true))
+        {
+            plugin.Configuration.ShowCategoryHeaders = headers;
+            changed = true;
+        }
+
+        SentinelModernSettingsRow.Draw(
+            "ClassySentinel.ButtonSize",
+            "Button size",
+            "Adjust each job tile without changing the launcher workflow.",
+            drawModernButtonSizeControl,
+            scale: scale);
+        SentinelModernSettingsRow.Draw(
+            "ClassySentinel.PanelScale",
+            "Panel scale",
+            "Scale the compact launcher independently of the game UI.",
+            drawModernPanelScaleControl,
+            scale: scale);
+        SentinelModernSettingsRow.Draw(
+            "ClassySentinel.ButtonsPerRow",
+            "Maximum buttons per row",
+            "Controls wrapping while keeping D-pad navigation aligned to visible rows.",
+            drawModernButtonsPerRowControl,
+            scale: scale);
+        SentinelModernSettingsRow.Draw(
+            "ClassySentinel.ResetPosition",
+            "Saved position",
+            "Return the launcher to its safe default anchor; all other settings stay intact.",
+            drawModernResetPositionControl,
+            scale: scale);
+    }
+
+    private void DrawModernButtonSizeControl()
+    {
+        var buttonSize = plugin.Configuration.ButtonSize;
+        if (!ImGui.SliderFloat("##ButtonSize", ref buttonSize, 28f, 64f, "%.0f px"))
+            return;
+
+        plugin.Configuration.ButtonSize = buttonSize;
+        modernChanged = true;
+    }
+
+    private void DrawModernPanelScaleControl()
+    {
+        var panelScale = plugin.Configuration.PanelScale;
+        if (!ImGui.SliderFloat("##PanelScale", ref panelScale, 0.6f, 1.6f, "%.2fx"))
+            return;
+
+        plugin.Configuration.PanelScale = panelScale;
+        modernChanged = true;
+    }
+
+    private void DrawModernButtonsPerRowControl()
+    {
+        var buttonsPerRow = plugin.Configuration.ButtonsPerRow;
+        if (!ImGui.SliderInt("##ButtonsPerRow", ref buttonsPerRow, 1, 16))
+            return;
+
+        plugin.Configuration.ButtonsPerRow = buttonsPerRow;
+        modernChanged = true;
+    }
+
+    private void DrawModernResetPositionControl()
+    {
+        if (ImGui.Button("Reset position", new Vector2(-1f, 0f)))
+            plugin.ResetPanelPosition();
     }
 
     private static void DrawControllerHelp(bool modern)
@@ -375,9 +561,14 @@ public sealed class SettingsWindow : Window
         }
     }
 
-    private static bool DrawBoolean(string id, string label, ref bool value, bool modern)
+    private bool DrawBoolean(string id, string label, ref bool value, bool modern)
         => modern
-            ? SentinelModernControls.Toggle(id, label, ref value, ImGuiHelpers.GlobalScale)
+            ? SentinelModernSwitch.Draw(
+                id,
+                label,
+                ref value,
+                modernShellState.Motion,
+                ImGuiHelpers.GlobalScale)
             : ImGui.Checkbox($"{label}##{id}", ref value);
 
     private static void DrawSection(string title, bool modern)
@@ -400,6 +591,84 @@ public sealed class SettingsWindow : Window
 
         plugin.Configuration.Theme = (int)theme;
         plugin.SaveConfiguration();
+    }
+
+    private void SelectModernPage(string id)
+    {
+        var page = id switch
+        {
+            "general" => SettingsPage.General,
+            "gearsets" => SettingsPage.Gearsets,
+            "appearance" => SettingsPage.Appearance,
+            _ => themeState.SelectedPage,
+        };
+        themeState.SelectPage(page);
+    }
+
+    private void RequestModernCollapse()
+    {
+        ImGui.SetWindowCollapsed("Classy Sentinel Settings##ClassySentinel-Settings", true);
+    }
+
+    private void RequestModernClose() => IsOpen = false;
+
+    private static string GetModernPageId(SettingsPage page)
+        => page switch
+        {
+            SettingsPage.General => "general",
+            SettingsPage.Gearsets => "gearsets",
+            SettingsPage.Appearance => "appearance",
+            _ => "general",
+        };
+
+    private static string GetModernPageLabel(SettingsPage page)
+        => page switch
+        {
+            SettingsPage.General => "General",
+            SettingsPage.Gearsets => "Gear sets",
+            SettingsPage.Appearance => "Appearance",
+            _ => "Settings",
+        };
+
+    private static void DrawModernPluginIcon(SentinelModernIconDrawContext context)
+        => DrawFontAwesomeIcon(
+            FontAwesomeIcon.ShieldAlt,
+            context.DrawList,
+            context.Minimum,
+            context.Maximum,
+            SentinelModernPalette.Text);
+
+    private static void DrawModernNavigationIcon(
+        FontAwesomeIcon icon,
+        SentinelModernNavIconDrawContext context)
+        => DrawFontAwesomeIcon(
+            icon,
+            context.DrawList,
+            context.Minimum,
+            context.Maximum,
+            context.Colour);
+
+    private static void DrawFontAwesomeIcon(
+        FontAwesomeIcon icon,
+        ImDrawListPtr drawList,
+        Vector2 minimum,
+        Vector2 maximum,
+        Vector4 colour)
+    {
+        var glyph = icon.ToIconString();
+        ImGui.PushFont(UiBuilder.IconFont);
+        try
+        {
+            var size = ImGui.CalcTextSize(glyph);
+            drawList.AddText(
+                minimum + (((maximum - minimum) - size) * 0.5f),
+                ImGui.ColorConvertFloat4ToU32(colour),
+                glyph);
+        }
+        finally
+        {
+            ImGui.PopFont();
+        }
     }
 
     private enum SettingsPage

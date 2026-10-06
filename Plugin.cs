@@ -72,6 +72,7 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(ShortCommandName);
         windowSystem.RemoveAllWindows();
+        settingsWindow.Dispose();
 
         if (configurationDirty)
             PluginInterface.SavePluginConfig(Configuration);
@@ -197,7 +198,7 @@ public sealed class Plugin : IDalamudPlugin
         ManualPanelOpen = !ManualPanelOpen;
     }
 
-    private void OpenSettings() => settingsWindow.IsOpen = true;
+    private void OpenSettings() => settingsWindow.OpenAndExpand();
 
     private void OnCommand(string command, string arguments)
     {
