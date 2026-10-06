@@ -45,6 +45,8 @@ public sealed class SettingsWindow : Window, IDisposable
     private SentinelStyleScope? classicStyle;
     private bool modernChanged;
     private bool modernThemeActive;
+    private Vector2 modernFrameWindowSize;
+    private Vector2? pendingModernSize;
     private bool expandOnNextDraw;
     private bool disposed;
 
@@ -88,24 +90,46 @@ public sealed class SettingsWindow : Window, IDisposable
         }
 
         var scale = ImGuiHelpers.GlobalScale;
+        if (pendingModernSize is { } requestedSize)
+        {
+            Size = requestedSize;
+            SizeCondition = ImGuiCond.Always;
+            pendingModernSize = null;
+        }
+        else
+        {
+            Size = new Vector2(900f, 720f);
+            SizeCondition = ImGuiCond.FirstUseEver;
+        }
+
         if (modernThemeActive)
         {
             Flags = SentinelModernWindowChrome.UseCustomHeader(classicWindowFlags);
             modernStyle.PushAppShell(scale);
-            var shellMinimum = SentinelModernAppLayout.MinimumWindowSize(
-                scale,
-                hasSecondarySidebar: false,
-                hasActionDock: true);
+            var headerHeight = SentinelModernAppLayoutOptions.Default.HeaderHeight;
             SizeConstraints = new WindowSizeConstraints
             {
-                MinimumSize = Vector2.Max(ClassicMinimumWindowSize, shellMinimum),
+                MinimumSize = new Vector2(
+                    ClassicMinimumWindowSize.X,
+                    plugin.Configuration.ModernWindowCollapsed
+                        ? headerHeight
+                        : ClassicMinimumWindowSize.Y),
+                MaximumSize = new Vector2(
+                    float.MaxValue,
+                    plugin.Configuration.ModernWindowCollapsed
+                        ? headerHeight
+                        : float.MaxValue),
             };
         }
         else
         {
             Flags = classicWindowFlags;
             classicStyle = SentinelStyleScope.PushWindow(scale);
-            SizeConstraints = new WindowSizeConstraints { MinimumSize = ClassicMinimumWindowSize };
+            SizeConstraints = new WindowSizeConstraints
+            {
+                MinimumSize = ClassicMinimumWindowSize,
+                MaximumSize = new Vector2(float.MaxValue),
+            };
         }
     }
 
@@ -132,6 +156,18 @@ public sealed class SettingsWindow : Window, IDisposable
     {
         IsOpen = true;
         expandOnNextDraw = true;
+        if (!plugin.Configuration.ModernWindowCollapsed)
+            return;
+
+        plugin.Configuration.ModernWindowCollapsed = false;
+        pendingModernSize = new Vector2(
+            plugin.Configuration.ModernExpandedWidth > 0f
+                ? MathF.Max(ClassicMinimumWindowSize.X, plugin.Configuration.ModernExpandedWidth)
+                : 900f,
+            plugin.Configuration.ModernExpandedHeight > 0f
+                ? MathF.Max(ClassicMinimumWindowSize.Y, plugin.Configuration.ModernExpandedHeight)
+                : 720f);
+        plugin.SaveConfiguration();
     }
 
     public void Dispose()
@@ -167,6 +203,7 @@ public sealed class SettingsWindow : Window, IDisposable
     private bool DrawModern()
     {
         modernChanged = false;
+        modernFrameWindowSize = ImGui.GetWindowSize();
         var panelVisible = plugin.ManualPanelOpen || plugin.Controller.IsActive;
         var options = new SentinelModernAppShellOptions(
             "ClassySentinel.Modern2",
@@ -185,6 +222,7 @@ public sealed class SettingsWindow : Window, IDisposable
             SurfaceStyle = SentinelModernAppSurfaceStyle.Unified,
             EnableWindowDragging = true,
             RequestCollapse = requestModernCollapse,
+            CollapseTooltip = plugin.Configuration.ModernWindowCollapsed ? "Expand" : "Minimize",
             RequestClose = requestModernClose,
         };
 
@@ -194,12 +232,15 @@ public sealed class SettingsWindow : Window, IDisposable
             ModernPrimaryNavigation,
             selectModernPage,
             drawModernPage,
-            drawActionDock: drawModernActionDock);
+            drawActionDock: plugin.Configuration.ModernWindowCollapsed ? null : drawModernActionDock);
         return modernChanged;
     }
 
     private void DrawModernPage()
     {
+        if (plugin.Configuration.ModernWindowCollapsed)
+            return;
+
         var scale = ImGuiHelpers.GlobalScale;
         switch (themeState.SelectedPage)
         {
@@ -607,7 +648,30 @@ public sealed class SettingsWindow : Window, IDisposable
 
     private void RequestModernCollapse()
     {
-        ImGui.SetWindowCollapsed("Classy Sentinel Settings##ClassySentinel-Settings", true);
+        var scale = ImGuiHelpers.GlobalScale;
+        var logicalFrameSize = modernFrameWindowSize / scale;
+        var currentWidth = MathF.Max(ClassicMinimumWindowSize.X, logicalFrameSize.X);
+        if (plugin.Configuration.ModernWindowCollapsed)
+        {
+            pendingModernSize = new Vector2(
+                currentWidth,
+                plugin.Configuration.ModernExpandedHeight > 0f
+                    ? MathF.Max(ClassicMinimumWindowSize.Y, plugin.Configuration.ModernExpandedHeight)
+                    : 720f);
+        }
+        else
+        {
+            plugin.Configuration.ModernExpandedWidth = currentWidth;
+            plugin.Configuration.ModernExpandedHeight =
+                MathF.Max(ClassicMinimumWindowSize.Y, logicalFrameSize.Y);
+            pendingModernSize = new Vector2(
+                currentWidth,
+                SentinelModernAppLayoutOptions.Default.HeaderHeight);
+        }
+
+        plugin.Configuration.ModernWindowCollapsed =
+            !plugin.Configuration.ModernWindowCollapsed;
+        plugin.SaveConfiguration();
     }
 
     private void RequestModernClose() => IsOpen = false;
