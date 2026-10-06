@@ -67,6 +67,14 @@ jobs:
         shell: pwsh
         run: Copy-Item -LiteralPath 'bin/Release/ClassySentinel/latest.zip' -Destination "$env:RUNNER_TEMP\ClassySentinel.zip" -Force
 
+      - name: Hash release asset
+        id: asset
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -LiteralPath "$env:RUNNER_TEMP\ClassySentinel.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Release ZIP SHA-256: $hash"
+
       - name: Create or replace prerelease
         shell: pwsh
         env:
