@@ -11,6 +11,14 @@ public sealed class Configuration : IPluginConfiguration
     // safely without preventing the rest of the configuration from loading.
     public int Theme { get; set; } = ThemeMigrationPolicy.Classic;
 
+    // Sentinel Modern uses an in-theme compact header instead of ImGui's
+    // native collapsed title bar. Preserve both the state and restore size.
+    public bool ModernWindowCollapsed { get; set; }
+
+    public float ModernExpandedWidth { get; set; }
+
+    public float ModernExpandedHeight { get; set; }
+
     // Retained only so version 3 configurations deserialize cleanly. Panel
     // visibility is now temporary runtime state and is never restored on load.
     public bool Visible { get; set; }
