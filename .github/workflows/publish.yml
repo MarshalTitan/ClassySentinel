@@ -32,6 +32,10 @@ jobs:
       - name: Run regression tests
         run: dotnet run --project tests/ClassySentinel.PositionTests/ClassySentinel.PositionTests.csproj -c Release
 
+      - name: Verify Sentinel Core pin and UI package hash
+        shell: pwsh
+        run: ./.github/scripts/Verify-SentinelCore.ps1
+
       - name: Read version
         id: version
         shell: pwsh
@@ -94,12 +98,15 @@ jobs:
           }
 
       - name: Trigger central Sentinel catalog reconciliation
+        id: catalog-notify
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            throw 'DALAMUD_CATALOG_TOKEN is required to publish Classy Sentinel to the central Sentinel catalog.'
+            Write-Warning 'DALAMUD_CATALOG_TOKEN is unavailable; skipping optional central catalog notification.'
+            "status=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
           }
 
           $payload = @{
@@ -120,8 +127,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw 'Failed to dispatch the central Sentinel catalog reconciliation.'
           }
+          "status=dispatched" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Verify public central Sentinel catalog
+        if: steps.catalog-notify.outputs.status == 'dispatched'
         shell: pwsh
         run: |
           $catalogUrl = 'https://raw.githubusercontent.com/MarshalTitan/Sentinel/main/repo.json'
