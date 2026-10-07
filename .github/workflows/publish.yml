@@ -6,23 +6,21 @@ on:
     branches: [main]
     paths:
       - '.github/releases/**'
-  pull_request:
-    types: [opened, synchronize]
-    branches: [main]
-    paths:
-      - '.github/releases/**'
 
 permissions:
   contents: write
 
+concurrency:
+  group: classy-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: main
 
       - name: Resolve release source
         id: source
@@ -63,6 +61,10 @@ jobs:
       - run: dotnet restore ClassySentinel.csproj --locked-mode
       - run: dotnet build ClassySentinel.csproj -c Release --no-restore
 
+      - name: Validate installable package
+        shell: pwsh
+        run: ./.github/scripts/Validate-Package.ps1 -PackagePath 'bin/Release/ClassySentinel/latest.zip' -ExpectedVersion '${{ steps.version.outputs.value }}'
+
       - name: Prepare release asset
         shell: pwsh
         run: Copy-Item -LiteralPath 'bin/Release/ClassySentinel/latest.zip' -Destination "$env:RUNNER_TEMP\ClassySentinel.zip" -Force
@@ -75,119 +77,52 @@ jobs:
           "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Release ZIP SHA-256: $hash"
 
-      - name: Create or replace prerelease
+      - name: Publish immutable GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
           $asset = "$env:RUNNER_TEMP\ClassySentinel.zip"
-          gh release view $tag --repo '${{ github.repository }}' *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $asset --clobber --repo '${{ github.repository }}'
+          $releaseJson = gh release view $tag --repo '${{ github.repository }}' --json targetCommitish,isDraft,isPrerelease,assets 2>$null
+          $exists = $LASTEXITCODE -eq 0
+          $global:LASTEXITCODE = 0
+          if ($exists) {
+            $release = $releaseJson | ConvertFrom-Json
+            if ($release.targetCommitish -ne '${{ github.sha }}' -or $release.isDraft -or !$release.isPrerelease) {
+              throw "Release $tag belongs to another source/state. Increment the version; assets are immutable."
+            }
+            if (@($release.assets | Where-Object name -eq 'ClassySentinel.zip').Count -ne 1) {
+              throw "Release $tag must contain exactly one ClassySentinel.zip; do not replace published assets."
+            }
+            Write-Host "Revalidating the existing immutable release for this exact source."
           }
           else {
-            gh release create $tag $asset --repo '${{ github.repository }}' --target '${{ steps.source.outputs.sha }}' --title "Classy Sentinel ${{ steps.version.outputs.value }} beta" --notes "Beta release built and packaged by GitHub Actions. Human in-game validation is required before wider distribution." --prerelease
+            gh release create $tag $asset --repo '${{ github.repository }}' --target '${{ github.sha }}' --title "Classy Sentinel ${{ steps.version.outputs.value }}" --notes "Built and tested by GitHub Actions. See source changes and supervised acceptance evidence for gameplay status." --prerelease
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create $tag." }
           }
 
-      - name: Update this repository's manifest
+      - name: Validate public release ZIP before child promotion
         shell: pwsh
         run: |
-          $path = 'repo.json'
-          $entries = @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json)
-          $entry = $entries | Where-Object InternalName -eq 'ClassySentinel' | Select-Object -First 1
-          if ($null -eq $entry) { throw 'ClassySentinel entry is missing.' }
-          $entry.AssemblyVersion = '${{ steps.version.outputs.value }}'
-          $entry.TestingAssemblyVersion = '${{ steps.version.outputs.value }}'
-          $entry.LastUpdate = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-          $tag = '${{ steps.version.outputs.tag }}'
-          $url = "https://github.com/${{ github.repository }}/releases/download/$tag/ClassySentinel.zip"
-          $entry.DownloadLinkInstall = $url
-          $entry.DownloadLinkUpdate = $url
-          $entry.DownloadLinkTesting = $url
-          ConvertTo-Json -InputObject $entries -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
-
-      - name: Commit updated repository manifest
-        shell: pwsh
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- repo.json
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git commit -m "Publish beta v${{ steps.version.outputs.value }} [skip ci]"
-            git push origin HEAD:main
-          }
-
-      - name: Trigger central Sentinel catalog reconciliation
-        id: catalog-notify
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            Write-Warning 'DALAMUD_CATALOG_TOKEN is unavailable; skipping optional central catalog notification.'
-            "status=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-            exit 0
-          }
-
-          $payload = @{
-            event_type = 'plugin-released'
-            client_payload = @{
-              source_repository = '${{ github.repository }}'
-              source_commit = '${{ steps.source.outputs.sha }}'
-              internal_name = 'ClassySentinel'
-              version = '${{ steps.version.outputs.value }}'
-              tag = '${{ steps.version.outputs.tag }}'
-            }
-          } | ConvertTo-Json -Depth 5
-
-          $payload | gh api `
-            --method POST `
-            'repos/MarshalTitan/Sentinel/dispatches' `
-            --input -
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Failed to dispatch the central Sentinel catalog reconciliation.'
-          }
-          "status=dispatched" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Verify public central Sentinel catalog
-        if: steps.catalog-notify.outputs.status == 'dispatched'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
-        run: |
-          $catalogUrl = 'https://api.github.com/repos/MarshalTitan/Sentinel/contents/repo.json?ref=main'
-          $expectedVersion = '${{ steps.version.outputs.value }}'
-          $expectedAsset = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ClassySentinel.zip"
-          $headers = @{
-            Accept = 'application/vnd.github+json'
-            Authorization = "Bearer $env:GH_TOKEN"
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-
-          for ($attempt = 1; $attempt -le 60; $attempt++) {
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/ClassySentinel.zip"
+          $download = Join-Path $env:RUNNER_TEMP 'public-ClassySentinel.zip'
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
             try {
-              $response = Invoke-RestMethod -Uri $catalogUrl -Headers $headers
-              $json = [Text.Encoding]::UTF8.GetString(
-                [Convert]::FromBase64String(($response.content -replace '\s', '')))
-              $catalog = @($json | ConvertFrom-Json)
-              $entry = @($catalog | Where-Object InternalName -eq 'ClassySentinel')
-              if ($entry.Count -eq 1 `
-                  -and $entry[0].AssemblyVersion -eq $expectedVersion `
-                  -and $entry[0].TestingAssemblyVersion -eq $expectedVersion `
-                  -and $entry[0].DownloadLinkInstall -eq $expectedAsset `
-                  -and $entry[0].DownloadLinkUpdate -eq $expectedAsset `
-                  -and $entry[0].DownloadLinkTesting -eq $expectedAsset) {
-                Write-Host "Verified Classy Sentinel $expectedVersion in the public central catalog."
-                exit 0
-              }
+              Invoke-WebRequest -Uri "$url`?release=${{ github.run_id }}-$attempt" -OutFile $download -TimeoutSec 60
+              ./.github/scripts/Validate-Package.ps1 -PackagePath $download -ExpectedVersion '${{ steps.version.outputs.value }}'
+              break
             }
             catch {
-              Write-Host "Central catalog verification attempt $attempt failed: $($_.Exception.Message)"
+              if ($attempt -eq 12) { throw }
+              Start-Sleep -Seconds 5
             }
-
-            Start-Sleep -Seconds 5
           }
 
-          throw "The public central Sentinel catalog did not reach Classy Sentinel $expectedVersion within five minutes."
+      - name: Publish authoritative child manifest and verify central catalog
+        uses: MarshalTitan/Sentinel/.github/actions/distribute@4bbc5ce50837b37c8cfaee5c39a075c4f68858ed
+        with:
+          internal-name: ClassySentinel
+          version: ${{ steps.version.outputs.value }}
+          tag: ${{ steps.version.outputs.tag }}
+          notification-token: ${{ secrets.DALAMUD_CATALOG_TOKEN }}
