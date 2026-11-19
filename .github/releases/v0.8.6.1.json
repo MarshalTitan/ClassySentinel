@@ -1,0 +1,4 @@
+{
+  "version": "0.8.6.1",
+  "reason": "Publish compatible Core attribution cleanup after build, 17 regressions, locked restore and installable package verification."
+}
