@@ -1,14 +1,14 @@
 param(
-    [string]$ExpectedCommit = '300703b360a58fb4b73bf7675d31fe8cab4614cd',
-    [string]$ExpectedTag = 'v0.3.1.0',
-    [string]$ExpectedPackageVersion = '0.3.1',
-    [string]$ExpectedUiPackageHash = 'e1a9ce4e1ce36042c0fcd53f4c23874d918640be10eef16c21f1cd436c6ba747'
+    [string]$ExpectedCommit = '2dc7cd22a7337420918a3639f9c91139651ca9e2',
+    [string]$ExpectedTag = 'v0.3.1.1',
+    [string]$ExpectedPackageVersion = '0.3.1.1',
+    [string]$ExpectedUiPackageHash = '4d21d7c868f48fd082e0bcbd42be136a4611dfb6b9e4588dcef5dde7037d6057'
 )
 
 $ErrorActionPreference = 'Stop'
 $expectedSource = ".packages/SentinelCore/$ExpectedTag"
-$expectedUiContentHash = 'dqe2P5SAGHFRSnhB5/C+SZM8pdPMLcsUCn442xOAhnwqClD2NRqzQKTeTswNjvAaGvgTXBnmqC89JrPkaPDixw=='
-$expectedCoreContentHash = 'vL3hVnWi2Md/EsHidfupM08F/WYPJtn0W0vYZUqEi4KwarQi3Aoshw2hluL1DBtVoj3Qsi9FEaFWwleyerD8ew=='
+$expectedUiContentHash = 'PX/5Ey10VDjv7OZCqH5PaX02I47SemjIUhUgpg2k732onrZ1Rtv0YQQo6cf4fpyYa/KdWEbby8WsBVOUDTJmqw=='
+$expectedCoreContentHash = 'WZwywGZ9txL4fwo7nxIm5r3coK2PES9g+fN5N+/wMOT4E1Ad4EGdCHQ8tC4fjlSpzbaS9cfipSsrUbWrH2+g8g=='
 
 [xml]$nuget = Get-Content -LiteralPath 'NuGet.Config' -Raw
 $source = @($nuget.configuration.packageSources.add) |
@@ -34,11 +34,11 @@ if ($uiLock.requested -ne "[$ExpectedPackageVersion, )" `
     -or $uiLock.resolved -ne $ExpectedPackageVersion `
     -or $uiLock.dependencies.'MarshalTitan.SentinelCore' -ne $ExpectedPackageVersion `
     -or $uiLock.contentHash -ne $expectedUiContentHash) {
-    throw 'The Sentinel Core UI lock entry does not match the exact 0.3.1 package.'
+    throw 'The Sentinel Core UI lock entry does not match the exact 0.3.1.1 package.'
 }
 if ($coreLock.resolved -ne $ExpectedPackageVersion `
     -or $coreLock.contentHash -ne $expectedCoreContentHash) {
-    throw 'The transitive Sentinel Core lock entry does not match the exact 0.3.1 package.'
+    throw 'The transitive Sentinel Core lock entry does not match the exact 0.3.1.1 package.'
 }
 
 $vendoredPackagePath = Join-Path $expectedSource "MarshalTitan.SentinelCore.UI.$ExpectedPackageVersion.nupkg"
