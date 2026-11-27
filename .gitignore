@@ -8,3 +8,5 @@ obj/
 .dotnet-sdk/
 .dotnet-install.ps1
 .nuget/
+
+.packages/SentinelCore/v0.4.1.2/

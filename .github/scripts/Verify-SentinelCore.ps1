@@ -1,14 +1,15 @@
 param(
-    [string]$ExpectedCommit = '2dc7cd22a7337420918a3639f9c91139651ca9e2',
-    [string]$ExpectedTag = 'v0.3.1.1',
-    [string]$ExpectedPackageVersion = '0.3.1.1',
-    [string]$ExpectedUiPackageHash = '4d21d7c868f48fd082e0bcbd42be136a4611dfb6b9e4588dcef5dde7037d6057'
+    [string]$ExpectedCommit = 'ffa1a6ed3c89337bfb901b566b9339e2e229d154',
+    [string]$ExpectedTag = 'v0.4.1.2',
+    [string]$ExpectedPackageVersion = '0.4.1.2',
+    [string]$ExpectedUiPackageHash = 'ee2aec0d063eb1ee1da815de58c58bb2c8ff2199ce395c118c1c3976606a4c1d'
 )
 
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'Prepare-NavigationCore.ps1')
 $expectedSource = ".packages/SentinelCore/$ExpectedTag"
-$expectedUiContentHash = 'PX/5Ey10VDjv7OZCqH5PaX02I47SemjIUhUgpg2k732onrZ1Rtv0YQQo6cf4fpyYa/KdWEbby8WsBVOUDTJmqw=='
-$expectedCoreContentHash = 'WZwywGZ9txL4fwo7nxIm5r3coK2PES9g+fN5N+/wMOT4E1Ad4EGdCHQ8tC4fjlSpzbaS9cfipSsrUbWrH2+g8g=='
+$expectedUiContentHash = 'XtHYnmok8vSCr45M6gNIoXnGQHtMFxg5vlQavtXXTX4TL6C/CA5BGuBS9XLr9MDtkvAkJMOuHgjCRtSkmjBDPw=='
+$expectedCoreContentHash = 'ggGA7P1x97fIsv9quAbgYwYj8xW6+8F/++tkDUKHpPHZt6kgT7mRyATg6GKdD7bk/UhlbGnKgA2sxHY3pCHNfw=='
 
 [xml]$nuget = Get-Content -LiteralPath 'NuGet.Config' -Raw
 $source = @($nuget.configuration.packageSources.add) |
@@ -34,11 +35,11 @@ if ($uiLock.requested -ne "[$ExpectedPackageVersion, )" `
     -or $uiLock.resolved -ne $ExpectedPackageVersion `
     -or $uiLock.dependencies.'MarshalTitan.SentinelCore' -ne $ExpectedPackageVersion `
     -or $uiLock.contentHash -ne $expectedUiContentHash) {
-    throw 'The Sentinel Core UI lock entry does not match the exact 0.3.1.1 package.'
+    throw 'The Sentinel Core UI lock entry does not match the exact 0.4.1.2 package.'
 }
 if ($coreLock.resolved -ne $ExpectedPackageVersion `
     -or $coreLock.contentHash -ne $expectedCoreContentHash) {
-    throw 'The transitive Sentinel Core lock entry does not match the exact 0.3.1.1 package.'
+    throw 'The transitive Sentinel Core lock entry does not match the exact 0.4.1.2 package.'
 }
 
 $vendoredPackagePath = Join-Path $expectedSource "MarshalTitan.SentinelCore.UI.$ExpectedPackageVersion.nupkg"

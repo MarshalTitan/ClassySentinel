@@ -223,6 +223,7 @@ public sealed class SettingsWindow : Window, IDisposable
             EnableWindowDragging = true,
             RequestCollapse = requestModernCollapse,
             CollapseTooltip = plugin.Configuration.ModernWindowCollapsed ? "Expand" : "Minimize",
+                IsCollapsed = plugin.Configuration.ModernWindowCollapsed,
             RequestClose = requestModernClose,
         };
 
