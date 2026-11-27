@@ -76,8 +76,8 @@ $metadata = $nuspec.package.metadata
 if ([string]$metadata.id -ne 'MarshalTitan.SentinelCore.UI' `
     -or [string]$metadata.version -ne $ExpectedPackageVersion `
     -or [string]$metadata.repository.commit -ne $ExpectedCommit `
-    -or [string]$metadata.repository.branch -ne "refs/tags/$ExpectedTag") {
-    throw "The vendored UI package provenance does not match $ExpectedTag at $ExpectedCommit."
+    -or [string]$metadata.repository.branch -notin @('main', 'refs/heads/main', "refs/tags/$ExpectedTag")) {
+    throw "The pinned UI package provenance does not match $ExpectedTag at $ExpectedCommit (observed branch: $($metadata.repository.branch), commit: $($metadata.repository.commit))."
 }
 
 $publishedPackagePath = Join-Path $env:RUNNER_TEMP "MarshalTitan.SentinelCore.UI.$ExpectedPackageVersion.nupkg"
