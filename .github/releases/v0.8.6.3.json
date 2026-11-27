@@ -1,0 +1,4 @@
+{
+  "version": "0.8.6.3",
+  "reason": "Deliver the shared focus-visible correction while preserving launcher and controller behavior."
+}

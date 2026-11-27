@@ -10,3 +10,5 @@ obj/
 .nuget/
 
 .packages/SentinelCore/v0.4.1.2/
+
+.packages/SentinelCore/
