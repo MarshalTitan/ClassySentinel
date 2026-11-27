@@ -1,0 +1,4 @@
+{
+  "version": "0.8.6.2",
+  "reason": "Polish the existing Modern navigation and custom header through compatible Core 0.4.1.2. Preserve launcher, controller, gear-set and persistence behavior."
+}
